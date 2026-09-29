@@ -94,14 +94,13 @@ function FairTurns() {
   const [students, setStudents] = useState<Student[]>([]);
   const [round, setRound] = useState(1);
   const [currentId, setCurrentId] = useState<string | null>(null);
-  const [shuffleName, setShuffleName] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
 
   const [remaining, setRemaining] = useState(60);
   const [timerRunning, setTimerRunning] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
 
-  const shuffleTimers = useRef<number[]>([]);
+  const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
   const [pipWin, setPipWin] = useState<Window | null>(null);
   const [pipSupported, setPipSupported] = useState(false);
   const [compact, setCompact] = useState(false);
@@ -110,7 +109,6 @@ function FairTurns() {
   const pending = useMemo(() => students.filter((s) => !s.doneThisRound), [students]);
   const doneCount = students.length - pending.length;
   const current = students.find((s) => s.id === currentId) ?? null;
-  const isShuffling = shuffleName !== null;
 
   // ---- timer ----
   useEffect(() => {
@@ -129,13 +127,6 @@ function FairTurns() {
     }, 1000);
     return () => window.clearInterval(id);
   }, [timerRunning]);
-
-  useEffect(
-    () => () => {
-      shuffleTimers.current.forEach((t) => window.clearTimeout(t));
-    },
-    [],
-  );
 
   const startClass = () => {
     setStudents(
@@ -158,7 +149,6 @@ function FairTurns() {
 
   const commitPick = useCallback(
     (picked: Student) => {
-      setShuffleName(null);
       setCurrentId(picked.id);
       setStudents((prev) => {
         const next = prev.map((s) =>
@@ -187,32 +177,16 @@ function FairTurns() {
   );
 
   const handleNext = useCallback(() => {
-    if (isShuffling || banner) return;
+    const now = performance.now();
+    if (now - lastNextAt.current < 300) return;
+    if (banner) return;
     const pool = students.filter((s) => !s.doneThisRound);
     if (pool.length === 0) return;
-    const picked = pool[Math.floor(Math.random() * pool.length)]!;
-
-    if (pool.length === 1) {
-      commitPick(picked);
-      return;
-    }
-
-    shuffleTimers.current.forEach((t) => window.clearTimeout(t));
-    shuffleTimers.current = [];
-    setTimerRunning(false);
-    setTimeUp(false);
-    setCurrentId(null);
-
-    const ticks = 14;
-    for (let i = 0; i < ticks; i++) {
-      shuffleTimers.current.push(
-        window.setTimeout(() => {
-          setShuffleName(pool[Math.floor(Math.random() * pool.length)]!.name);
-        }, i * 85),
-      );
-    }
-    shuffleTimers.current.push(window.setTimeout(() => commitPick(picked), ticks * 85 + 120));
-  }, [banner, commitPick, isShuffling, students]);
+    lastNextAt.current = now;
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    if (!picked) return;
+    commitPick(picked);
+  }, [banner, commitPick, students]);
 
   const toggleTimer = useCallback(() => {
     if (!useTimer) return;
@@ -463,11 +437,10 @@ function FairTurns() {
   const mini = (
     <div className="flex h-full min-h-0 w-full flex-col justify-between gap-2 bg-background p-3 text-foreground">
       <p
-        className={`truncate text-center font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight ${
-          isShuffling ? "text-muted-foreground" : "text-primary"
-        }`}
+        key={current ? current.id + String(current.total) : "empty"}
+        className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight text-primary"
       >
-        {isShuffling ? shuffleName : (current?.name ?? "—")}
+        {current?.name ?? "—"}
       </p>
       {useTimer && (
         <div className="space-y-1">
@@ -485,7 +458,7 @@ function FairTurns() {
       <div className="flex items-center gap-2">
         <Button
           onClick={handleNext}
-          disabled={isShuffling || !!banner || pending.length === 0}
+          disabled={!!banner || pending.length === 0}
           className="h-12 flex-1 rounded-2xl text-xl font-extrabold tracking-wide"
         >
           NEXT
@@ -590,11 +563,7 @@ function FairTurns() {
 
       <section className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
         <div className="stage-card flex min-h-[22rem] flex-col items-center justify-center gap-6 p-8 text-center">
-          {isShuffling ? (
-            <p className="font-[family-name:var(--font-display)] text-6xl font-extrabold text-muted-foreground sm:text-7xl">
-              {shuffleName}
-            </p>
-          ) : current ? (
+          {current ? (
             <p
               key={current.id + String(current.total)}
               className="animate-pop-in font-[family-name:var(--font-display)] text-6xl font-extrabold leading-tight text-primary sm:text-8xl"
@@ -609,7 +578,7 @@ function FairTurns() {
 
           <Button
             onClick={handleNext}
-            disabled={isShuffling || !!banner || pending.length === 0}
+            disabled={!!banner || pending.length === 0}
             className="h-24 w-full max-w-md rounded-3xl text-4xl font-extrabold tracking-wide"
           >
             NEXT
