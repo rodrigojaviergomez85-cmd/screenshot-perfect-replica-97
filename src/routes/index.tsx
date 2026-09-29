@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Maximize2, Minimize2, Pause, PictureInPicture2, Play, RotateCcw } from "lucide-react";
+import { Maximize2, Minimize2, Pause, PictureInPicture2, Play, RotateCcw, Users, X, Check } from "lucide-react";
+import { ZoomImport } from "@/components/ZoomImport";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
@@ -104,11 +105,14 @@ function FairTurns() {
   const [pipWin, setPipWin] = useState<Window | null>(null);
   const [pipSupported, setPipSupported] = useState(false);
   const [compact, setCompact] = useState(false);
+  const [lastPicked, setLastPicked] = useState<Student | null>(null);
+  const [showRoster, setShowRoster] = useState(false);
+  const [newName, setNewName] = useState("");
 
   const parsed = useMemo(() => parseNames(rosterText), [rosterText]);
   const pending = useMemo(() => students.filter((s) => !s.doneThisRound), [students]);
   const doneCount = students.length - pending.length;
-  const current = students.find((s) => s.id === currentId) ?? null;
+  const current = students.find((s) => s.id === currentId) ?? (currentId ? lastPicked : null);
 
   // ---- timer ----
   useEffect(() => {
@@ -150,21 +154,13 @@ function FairTurns() {
   const commitPick = useCallback(
     (picked: Student) => {
       setCurrentId(picked.id);
+      setLastPicked({ ...picked, total: picked.total + 1 });
       setStudents((prev) => {
         const next = prev.map((s) =>
           s.id === picked.id
             ? { ...s, doneThisRound: true, total: s.total + 1, roundsCompleted: s.roundsCompleted + 1 }
             : s,
         );
-        if (next.every((s) => s.doneThisRound)) {
-          const finished = round;
-          setBanner(`Round ${finished} complete 🎉`);
-          window.setTimeout(() => {
-            setStudents((cur) => cur.map((s) => ({ ...s, doneThisRound: false })));
-            setRound((r) => r + 1);
-            setBanner(null);
-          }, 1800);
-        }
         return next;
       });
       if (useTimer) {
@@ -173,8 +169,38 @@ function FairTurns() {
         setTimerRunning(true);
       }
     },
-    [round, turnSeconds, useTimer],
+    [turnSeconds, useTimer],
   );
+
+  useEffect(() => {
+    if (screen !== "class" || banner || students.length === 0) return;
+    if (!students.every((s) => s.doneThisRound)) return;
+    setBanner(`Round ${round} complete 🎉`);
+    const t = window.setTimeout(() => {
+      setStudents((cur) => cur.map((s) => ({ ...s, doneThisRound: false })));
+      setRound((r) => r + 1);
+      setBanner(null);
+    }, 1800);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [students, screen]);
+
+  const addStudent = () => {
+    const name = newName.trim().replace(/\s+/g, " ");
+    if (!name) return;
+    setNewName("");
+    setStudents((prev) =>
+      prev.some((s) => s.name.toLowerCase() === name.toLowerCase())
+        ? prev
+        : [...prev, { id: makeId(), name, total: 0, roundsCompleted: 0, doneThisRound: false }],
+    );
+  };
+
+  const removeStudent = (id: string) => setStudents((prev) => prev.filter((s) => s.id !== id));
+
+  const addImported = (names: string[]) => {
+    setRosterText((t) => parseNames([t, ...names].join("\n")).join("\n"));
+  };
 
   const handleNext = useCallback(() => {
     const now = performance.now();
@@ -232,7 +258,7 @@ function FairTurns() {
   const openFloat = async () => {
     const dpip = (window as unknown as { documentPictureInPicture?: { requestWindow: (o: { width: number; height: number }) => Promise<Window> } }).documentPictureInPicture;
     if (!dpip) return;
-    const w = await dpip.requestWindow({ width: 320, height: 220 });
+    const w = await dpip.requestWindow({ width: 320, height: 320 });
     document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
       w.document.head.appendChild(node.cloneNode(true));
     });
@@ -295,6 +321,7 @@ function FairTurns() {
             <label htmlFor="roster" className="text-sm font-semibold">
               Paste or type student names, one per line
             </label>
+            <ZoomImport onAdd={addImported} />
             <textarea
               id="roster"
               value={rosterText}
@@ -434,14 +461,51 @@ function FairTurns() {
     setTimerRunning(false);
   };
 
+  const rosterPanel = (
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="flex gap-1">
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") addStudent();
+          }}
+          placeholder="New student"
+          className="min-w-0 flex-1 rounded-lg border border-input bg-background px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <Button size="sm" className="rounded-lg" onClick={addStudent}>Add</Button>
+      </div>
+      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+        {students.map((s) => (
+          <li key={s.id} className="flex items-center gap-2 rounded-lg bg-secondary px-2 py-1 text-sm font-semibold text-secondary-foreground">
+            <span className="flex-1 truncate">{s.name}</span>
+            {s.doneThisRound && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
+            <button onClick={() => removeStudent(s.id)} aria-label={`Remove ${s.name}`} className="rounded p-0.5 hover:bg-muted">
+              <X className="h-4 w-4" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
   const mini = (
-    <div className="flex h-full min-h-0 w-full flex-col justify-between gap-2 bg-background p-3 text-foreground">
+    <div className="relative flex h-full min-h-0 w-full flex-col justify-between gap-2 bg-background p-3 text-foreground">
+      <button
+        onClick={() => setShowRoster((v) => !v)}
+        className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-secondary px-2 py-0.5 text-xs font-bold text-secondary-foreground"
+        aria-label="Roster"
+      >
+        <Users className="h-3.5 w-3.5" /> {students.length}
+      </button>
       <p
         key={current ? current.id + String(current.total) : "empty"}
         className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight text-primary"
       >
         {current?.name ?? "—"}
       </p>
+      {showRoster && rosterPanel}
       {useTimer && (
         <div className="space-y-1">
           <p className={`text-center text-2xl font-extrabold tabular-nums ${timeColor}`}>
