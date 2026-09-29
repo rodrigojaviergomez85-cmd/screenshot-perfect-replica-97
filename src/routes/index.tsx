@@ -100,7 +100,7 @@ function FairTurns() {
   const [timerRunning, setTimerRunning] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
 
-  const lastNextAt = useRef(0);
+  const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
   const [pipWin, setPipWin] = useState<Window | null>(null);
   const [pipSupported, setPipSupported] = useState(false);
   const [compact, setCompact] = useState(false);
@@ -179,10 +179,10 @@ function FairTurns() {
   const handleNext = useCallback(() => {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
-    lastNextAt.current = now;
     if (banner) return;
     const pool = students.filter((s) => !s.doneThisRound);
     if (pool.length === 0) return;
+    lastNextAt.current = now;
     const picked = pool[Math.floor(Math.random() * pool.length)];
     if (!picked) return;
     commitPick(picked);
