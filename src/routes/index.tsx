@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Maximize2, Minimize2, Pause, PictureInPicture2, Play, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
@@ -100,6 +102,9 @@ function FairTurns() {
   const [timeUp, setTimeUp] = useState(false);
 
   const shuffleTimers = useRef<number[]>([]);
+  const [pipWin, setPipWin] = useState<Window | null>(null);
+  const [pipSupported, setPipSupported] = useState(false);
+  const [compact, setCompact] = useState(false);
 
   const parsed = useMemo(() => parseNames(rosterText), [rosterText]);
   const pending = useMemo(() => students.filter((s) => !s.doneThisRound), [students]);
@@ -234,8 +239,36 @@ function FairTurns() {
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [handleNext, screen, toggleTimer]);
+    pipWin?.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      pipWin?.removeEventListener("keydown", onKey);
+    };
+  }, [handleNext, screen, toggleTimer, pipWin]);
+
+  // ---- float (Document Picture-in-Picture) ----
+  useEffect(() => {
+    setPipSupported(typeof window !== "undefined" && "documentPictureInPicture" in window);
+  }, []);
+
+  useEffect(() => {
+    if (screen !== "class" && pipWin) pipWin.close();
+  }, [screen, pipWin]);
+
+  const openFloat = async () => {
+    const dpip = (window as unknown as { documentPictureInPicture?: { requestWindow: (o: { width: number; height: number }) => Promise<Window> } }).documentPictureInPicture;
+    if (!dpip) return;
+    const w = await dpip.requestWindow({ width: 320, height: 220 });
+    document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+      w.document.head.appendChild(node.cloneNode(true));
+    });
+    w.document.documentElement.className = document.documentElement.className;
+    w.document.body.style.margin = "0";
+    w.document.body.style.height = "100vh";
+    w.document.body.style.display = "flex";
+    w.addEventListener("pagehide", () => setPipWin(null));
+    setPipWin(w);
+  };
 
   const editRoster = () => {
     setRosterText(students.map((s) => s.name).join("\n"));
@@ -421,8 +454,77 @@ function FairTurns() {
   const barColor =
     remaining === 0 ? "bg-destructive" : timeRatio <= 0.25 ? "bg-warning" : "bg-primary";
 
+  const resetTimer = () => {
+    setRemaining(turnSeconds);
+    setTimeUp(false);
+    setTimerRunning(false);
+  };
+
+  const mini = (
+    <div className="flex h-full min-h-0 w-full flex-col justify-between gap-2 bg-background p-3 text-foreground">
+      <p
+        className={`truncate text-center font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight ${
+          isShuffling ? "text-muted-foreground" : "text-primary"
+        }`}
+      >
+        {isShuffling ? shuffleName : (current?.name ?? "—")}
+      </p>
+      {useTimer && (
+        <div className="space-y-1">
+          <p className={`text-center text-2xl font-extrabold tabular-nums ${timeColor}`}>
+            {remaining === 0 && timeUp ? "Time's up" : mmss(remaining)}
+          </p>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+            <div
+              className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
+              style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <Button
+          onClick={handleNext}
+          disabled={isShuffling || !!banner || pending.length === 0}
+          className="h-12 flex-1 rounded-2xl text-xl font-extrabold tracking-wide"
+        >
+          NEXT
+        </Button>
+        {useTimer && (
+          <>
+            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
+              {timerRunning ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+            </Button>
+            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={resetTimer} aria-label="Reset">
+              <RotateCcw className="h-5 w-5" />
+            </Button>
+          </>
+        )}
+      </div>
+      <p className="text-center text-xs font-semibold text-muted-foreground">
+        {banner ?? `Round ${round} · ${doneCount}/${students.length}`}
+      </p>
+    </div>
+  );
+
+  const pipPortal = pipWin ? createPortal(mini, pipWin.document.body) : null;
+
+  if (compact && !pipSupported) {
+    return (
+      <main className="flex min-h-screen flex-col">
+        <div className="flex justify-end p-2">
+          <Button variant="ghost" size="sm" onClick={() => setCompact(false)}>
+            <Maximize2 className="mr-1 h-4 w-4" /> Full view
+          </Button>
+        </div>
+        <div className="flex-1">{mini}</div>
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-6">
+      {pipPortal}
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-baseline gap-4">
           <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight">
@@ -433,6 +535,22 @@ function FairTurns() {
           </span>
         </div>
         <div className="flex gap-2">
+          {pipSupported ? (
+            !pipWin && (
+              <Button className="rounded-xl" onClick={() => void openFloat()}>
+                <PictureInPicture2 className="mr-1 h-4 w-4" /> Float
+              </Button>
+            )
+          ) : (
+            <Button
+              variant="outline"
+              className="rounded-xl"
+              title="For a floating window, open this app in Chrome or Edge."
+              onClick={() => setCompact(true)}
+            >
+              <Minimize2 className="mr-1 h-4 w-4" /> Compact mode
+            </Button>
+          )}
           <Button variant="outline" className="rounded-xl" onClick={editRoster}>
             Edit roster
           </Button>
