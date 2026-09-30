@@ -227,7 +227,7 @@ function FairTurns() {
 
   useEffect(() => {
     if (!banner) return;
-    const delay = banner.exiting ? 300 : 2500;
+    const delay = banner.exiting ? 300 : 2650;
     const t = window.setTimeout(() => {
       if (!banner.exiting) {
         setBanner((currentBanner) => currentBanner ? { ...currentBanner, exiting: true } : null);
