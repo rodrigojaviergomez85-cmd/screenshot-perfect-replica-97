@@ -286,7 +286,7 @@ function FairTurns() {
   }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.accent = accentColor;
+    document.documentElement.dataset["accent"] = accentColor;
     if (!preferencesLoaded) return;
     try {
       window.localStorage.setItem(COLOR_STORAGE_KEY, accentColor);
@@ -297,7 +297,7 @@ function FairTurns() {
   }, [accentColor, coachMessages, preferencesLoaded]);
 
   useEffect(() => {
-    if (pipWin) pipWin.document.documentElement.dataset.accent = accentColor;
+    if (pipWin) pipWin.document.documentElement.dataset["accent"] = accentColor;
   }, [accentColor, pipWin]);
 
   // ---- timer ----
@@ -486,7 +486,7 @@ function FairTurns() {
         w.document.head.appendChild(node.cloneNode(true));
       });
       w.document.documentElement.className = document.documentElement.className;
-      w.document.documentElement.dataset.accent = accentColor;
+      w.document.documentElement.dataset["accent"] = accentColor;
       w.document.body.style.margin = "0";
       w.document.body.style.height = "100vh";
       w.document.body.style.display = "flex";
