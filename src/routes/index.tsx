@@ -430,7 +430,11 @@ function FairTurns() {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     const startsNewRound = !!banner;
-    const pool = startsNewRound ? students : students.filter((s) => !s.doneThisRound);
+    let pool = startsNewRound ? students : students.filter((s) => !s.doneThisRound);
+    if (startsNewRound && students.length >= 2 && lastPicked) {
+      const filtered = pool.filter((s) => s.id !== lastPicked.id);
+      if (filtered.length > 0) pool = filtered;
+    }
     if (pool.length === 0) return;
     lastNextAt.current = now;
     const picked = pool[Math.floor(Math.random() * pool.length)];
@@ -440,7 +444,7 @@ function FairTurns() {
       setRound((r) => r + 1);
     }
     commitPick(picked, startsNewRound);
-  }, [banner, commitPick, students]);
+  }, [banner, commitPick, lastPicked, students]);
 
   const canSkip = !!current && students.some((s) => s.id === current.id && !s.skippedThisRound);
 
@@ -470,7 +474,11 @@ function FairTurns() {
         : s,
     );
     const startsNewRound = !!banner;
-    const pool = startsNewRound ? next : next.filter((s) => !s.doneThisRound);
+    let pool = startsNewRound ? next : next.filter((s) => !s.doneThisRound);
+    if (startsNewRound && next.length >= 2 && lastPicked) {
+      const filtered = pool.filter((s) => s.id !== lastPicked.id);
+      if (filtered.length > 0) pool = filtered;
+    }
     setStudents(next);
     const picked = pool[Math.floor(Math.random() * pool.length)];
     if (!picked) {
