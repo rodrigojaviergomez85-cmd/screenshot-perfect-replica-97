@@ -990,8 +990,7 @@ function FairTurns() {
     const seconds = Math.min(300, Math.max(5, Math.round(Number(customDraft))));
     if (!Number.isFinite(seconds)) return;
     setCustomSeconds(seconds);
-    setTurnSeconds(seconds);
-    setEditingTime(false);
+    applyTurnSeconds(seconds);
   };
 
   const timerLengthControls = (
@@ -1064,14 +1063,16 @@ function FairTurns() {
       {showRoster && rosterPanel}
       {useTimer && (
         <div className="space-y-1">
-          <p className={`text-center text-2xl font-extrabold tabular-nums ${timeColor}`}>
-            {remaining === 0 && timeUp ? "Time's up" : mmss(remaining)}
-          </p>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-            <div
-              className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
-              style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
-            />
+          <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
+            <p className={`text-center text-2xl font-extrabold tabular-nums ${timeColor}`}>
+              {remaining === 0 && timeUp ? "Time's up" : mmss(remaining)}
+            </p>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+              <div
+                className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
+                style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
+              />
+            </div>
           </div>
           {timerLengthControls}
         </div>
@@ -1089,7 +1090,7 @@ function FairTurns() {
         </Button>
         {useTimer && (
           <>
-            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
+            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
               {timerRunning ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
             </Button>
             <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={resetTimer} aria-label="Reset">
@@ -1102,7 +1103,7 @@ function FairTurns() {
         <button onClick={undoSkip} className="text-center text-xs font-bold text-primary underline">Undo skip</button>
       )}
       <p className="text-center text-xs font-semibold text-muted-foreground">
-        Round {round} · {doneCount}/{students.length} · {turnSeconds}s
+        Round {round} · {doneCount}/{students.length} · {noTimer ? "no timer" : `${turnSeconds}s`}
       </p>
     </div>
   );
