@@ -151,6 +151,7 @@ function FairTurns() {
   const [lastPicked, setLastPicked] = useState<Student | null>(null);
   const [showRoster, setShowRoster] = useState(false);
   const [newName, setNewName] = useState("");
+  const [closingMessage, setClosingMessage] = useState<string | null>(null);
 
   const parsed = useMemo(() => parseNames(rosterText), [rosterText]);
   const pending = useMemo(() => students.filter((s) => !s.doneThisRound), [students]);
