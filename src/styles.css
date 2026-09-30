@@ -125,10 +125,11 @@
 }
 
 :root[data-accent="orange"] {
-  --accent: hsl(17.5 88.3% 36%);
-  --accent-soft: hsl(17.5 72% 96%);
-  --accent-tint: hsl(17.5 68% 90%);
-  --accent-text: hsl(17.5 72% 15%);
+  /* Exact company logo orange #E2761C */
+  --accent: hsl(27.6 78% 49.8%);
+  --accent-soft: hsl(27.6 70% 96%);
+  --accent-tint: hsl(27.6 66% 90%);
+  --accent-text: hsl(27.6 70% 15%);
 }
 
 :root[data-accent="yellow"] {
@@ -222,7 +223,7 @@
 }
 
 @utility bg-swatch-orange {
-  background-color: hsl(17.5 88.3% 36%);
+  background-color: hsl(27.6 78% 49.8%);
 }
 
 @keyframes pop-in {
