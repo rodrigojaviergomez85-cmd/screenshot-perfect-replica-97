@@ -444,7 +444,7 @@ function FairTurns() {
       setRound((r) => r + 1);
     }
     commitPick(picked, startsNewRound);
-  }, [banner, commitPick, students]);
+  }, [banner, commitPick, lastPicked, students]);
 
   const canSkip = !!current && students.some((s) => s.id === current.id && !s.skippedThisRound);
 
