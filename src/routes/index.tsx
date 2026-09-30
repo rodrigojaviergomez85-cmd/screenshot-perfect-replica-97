@@ -808,9 +808,10 @@ function FairTurns() {
     remaining === 0 ? "bg-destructive" : timeRatio <= 0.25 ? "bg-warning" : "bg-primary";
 
   const resetTimer = () => {
-    setRemaining(activeTurnSeconds);
+    setRemaining(turnSeconds);
+    setActiveTurnSeconds(turnSeconds);
     setTimeUp(false);
-    setTimerRunning(false);
+    setTimerRunning(true);
   };
 
   const selectTurnSeconds = (seconds: number) => {
@@ -1076,11 +1077,7 @@ function FairTurns() {
                 <Button
                   variant="outline"
                   className="rounded-xl"
-                  onClick={() => {
-                    setRemaining(activeTurnSeconds);
-                    setTimeUp(false);
-                    setTimerRunning(false);
-                  }}
+                  onClick={resetTimer}
                 >
                   Reset
                 </Button>
