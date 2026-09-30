@@ -63,7 +63,12 @@ function shuffleMessages(messages: readonly string[], avoidFirst?: string) {
   const shuffled = [...messages];
   for (let i = shuffled.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j] ?? shuffled[i], shuffled[i] ?? shuffled[j]];
+    const current = shuffled[i];
+    const replacement = shuffled[j];
+    if (current !== undefined && replacement !== undefined) {
+      shuffled[i] = replacement;
+      shuffled[j] = current;
+    }
   }
   if (avoidFirst && shuffled[0] === avoidFirst && shuffled.length > 1) {
     const first = shuffled[0];
