@@ -361,6 +361,7 @@ function FairTurns() {
     setRosterText("");
     setRound(1);
     setCurrentId(null);
+    setClosingMessage(null);
     setScreen("setup");
   };
 
