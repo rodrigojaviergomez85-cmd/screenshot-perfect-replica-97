@@ -6,8 +6,8 @@
 
 /*
  * Fair Turns design system.
- * One friendly green primary, high contrast, large rounded surfaces.
- * All colors are oklch semantic tokens. Never hardcode colors in components.
+ * Fair Turns uses one selected hue to derive its strong accent and soft surfaces.
+ * Cards remain white and body copy remains neutral for consistent readability.
  */
 
 @theme inline {
@@ -32,8 +32,8 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent-tint);
+  --color-accent-foreground: var(--accent-text);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-warning: var(--warning);
@@ -57,88 +57,85 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  --shadow-card: 0 1px 2px oklch(0.25 0.06 165 / 0.06), 0 12px 32px oklch(0.25 0.06 165 / 0.08);
-  --shadow-stage: 0 24px 70px oklch(0.25 0.06 165 / 0.16);
+  --shadow-card: 0 1px 2px color-mix(in srgb, var(--accent) 6%, transparent), 0 12px 32px color-mix(in srgb, var(--accent) 8%, transparent);
+  --shadow-stage: 0 24px 70px color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
 :root {
   --radius: 1rem;
-  --background: oklch(0.985 0.012 160);
-  --foreground: oklch(0.22 0.035 165);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.035 165);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.035 165);
-  --primary: oklch(0.62 0.15 160);
-  --primary-foreground: oklch(0.99 0.01 160);
-  --secondary: oklch(0.945 0.025 165);
-  --secondary-foreground: oklch(0.3 0.05 165);
-  --muted: oklch(0.955 0.015 165);
-  --muted-foreground: oklch(0.52 0.03 165);
-  --accent: oklch(0.92 0.06 165);
-  --accent-foreground: oklch(0.28 0.06 165);
+  --accent: hsl(150.8 82.6% 33.7%);
+  --accent-soft: hsl(150.8 50% 96%);
+  --accent-tint: hsl(150.8 44% 90%);
+  --accent-text: hsl(150.8 65% 15%);
+  --background: var(--accent-soft);
+  --foreground: hsl(165 32% 16%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(165 32% 16%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(165 32% 16%);
+  --primary: var(--accent);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: var(--accent-tint);
+  --secondary-foreground: var(--accent-text);
+  --muted: var(--accent-soft);
+  --muted-foreground: color-mix(in srgb, var(--accent-text) 68%, white);
   --destructive: oklch(0.58 0.21 25);
   --destructive-foreground: oklch(0.99 0.01 25);
   --warning: oklch(0.78 0.15 75);
   --warning-foreground: oklch(0.28 0.07 75);
-  --success: oklch(0.65 0.15 155);
-  --success-foreground: oklch(0.99 0.01 155);
-  --border: oklch(0.9 0.02 165);
-  --input: oklch(0.9 0.02 165);
-  --ring: oklch(0.62 0.15 160);
-  --chart-1: oklch(0.62 0.15 160);
+  --success: var(--accent);
+  --success-foreground: hsl(0 0% 100%);
+  --border: var(--accent-tint);
+  --input: var(--accent-tint);
+  --ring: var(--accent);
+  --chart-1: var(--accent);
   --chart-2: oklch(0.7 0.13 200);
   --chart-3: oklch(0.78 0.15 75);
   --chart-4: oklch(0.58 0.21 25);
   --chart-5: oklch(0.55 0.1 280);
-  --sidebar: oklch(0.975 0.015 165);
-  --sidebar-foreground: oklch(0.22 0.035 165);
-  --sidebar-primary: oklch(0.62 0.15 160);
-  --sidebar-primary-foreground: oklch(0.99 0.01 160);
-  --sidebar-accent: oklch(0.92 0.06 165);
-  --sidebar-accent-foreground: oklch(0.28 0.06 165);
-  --sidebar-border: oklch(0.9 0.02 165);
-  --sidebar-ring: oklch(0.62 0.15 160);
+  --sidebar: var(--accent-soft);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--accent);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: var(--accent-tint);
+  --sidebar-accent-foreground: var(--accent-text);
+  --sidebar-border: var(--accent-tint);
+  --sidebar-ring: var(--accent);
 }
 
 :root[data-accent="blue"] {
-  --primary: oklch(0.56 0.19 255);
-  --primary-foreground: oklch(0.99 0.01 255);
-  --accent: oklch(0.92 0.05 255);
-  --accent-foreground: oklch(0.27 0.09 255);
-  --ring: oklch(0.56 0.19 255);
+  --accent: hsl(221.2 83.2% 53.3%);
+  --accent-soft: hsl(221.2 70% 96%);
+  --accent-tint: hsl(221.2 68% 90%);
+  --accent-text: hsl(221.2 70% 15%);
 }
 
 :root[data-accent="purple"] {
-  --primary: oklch(0.52 0.2 305);
-  --primary-foreground: oklch(0.99 0.01 305);
-  --accent: oklch(0.92 0.05 305);
-  --accent-foreground: oklch(0.27 0.09 305);
-  --ring: oklch(0.52 0.2 305);
+  --accent: hsl(272.1 71.7% 47.1%);
+  --accent-soft: hsl(272.1 65% 96%);
+  --accent-tint: hsl(272.1 60% 90%);
+  --accent-text: hsl(272.1 65% 15%);
 }
 
 :root[data-accent="orange"] {
-  --primary: oklch(0.58 0.17 48);
-  --primary-foreground: oklch(0.99 0.01 48);
-  --accent: oklch(0.93 0.06 65);
-  --accent-foreground: oklch(0.29 0.08 48);
-  --ring: oklch(0.58 0.17 48);
+  --accent: hsl(17.5 88.3% 36%);
+  --accent-soft: hsl(17.5 72% 96%);
+  --accent-tint: hsl(17.5 68% 90%);
+  --accent-text: hsl(17.5 72% 15%);
 }
 
 :root[data-accent="teal"] {
-  --primary: oklch(0.52 0.12 190);
-  --primary-foreground: oklch(0.99 0.01 190);
-  --accent: oklch(0.92 0.05 190);
-  --accent-foreground: oklch(0.27 0.07 190);
-  --ring: oklch(0.52 0.12 190);
+  --accent: hsl(175.3 77.4% 26.1%);
+  --accent-soft: hsl(175.3 55% 96%);
+  --accent-tint: hsl(175.3 50% 90%);
+  --accent-text: hsl(175.3 65% 15%);
 }
 
 :root[data-accent="pink"] {
-  --primary: oklch(0.56 0.19 355);
-  --primary-foreground: oklch(0.99 0.01 355);
-  --accent: oklch(0.93 0.05 355);
-  --accent-foreground: oklch(0.28 0.09 355);
-  --ring: oklch(0.56 0.19 355);
+  --accent: hsl(335.1 77.6% 38%);
+  --accent-soft: hsl(335.1 68% 96%);
+  --accent-tint: hsl(335.1 62% 90%);
+  --accent-text: hsl(335.1 68% 15%);
 }
 
 .dark {
@@ -205,27 +202,27 @@
 }
 
 @utility bg-swatch-green {
-  background-color: oklch(0.62 0.15 160);
+  background-color: hsl(150.8 82.6% 33.7%);
 }
 
 @utility bg-swatch-blue {
-  background-color: oklch(0.56 0.19 255);
+  background-color: hsl(221.2 83.2% 53.3%);
 }
 
 @utility bg-swatch-purple {
-  background-color: oklch(0.52 0.2 305);
+  background-color: hsl(272.1 71.7% 47.1%);
 }
 
 @utility bg-swatch-orange {
-  background-color: oklch(0.58 0.17 48);
+  background-color: hsl(17.5 88.3% 36%);
 }
 
 @utility bg-swatch-teal {
-  background-color: oklch(0.52 0.12 190);
+  background-color: hsl(175.3 77.4% 26.1%);
 }
 
 @utility bg-swatch-pink {
-  background-color: oklch(0.56 0.19 355);
+  background-color: hsl(335.1 77.6% 38%);
 }
 
 @keyframes pop-in {
