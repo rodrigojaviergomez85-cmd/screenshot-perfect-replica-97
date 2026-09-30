@@ -392,11 +392,14 @@ function FairTurns() {
         });
         return next;
       });
-      if (useTimer) {
+      if (useTimer && turnSeconds > 0) {
         setRemaining(turnSeconds);
         setActiveTurnSeconds(turnSeconds);
         setTimeUp(false);
         setTimerRunning(true);
+      } else {
+        setTimerRunning(false);
+        setTimeUp(false);
       }
     },
     [turnSeconds, useTimer],
@@ -530,7 +533,7 @@ function FairTurns() {
   };
 
   const toggleTimer = useCallback(() => {
-    if (!useTimer) return;
+    if (!useTimer || turnSeconds === 0) return;
     setTimerRunning((r) => {
       if (!r && remaining === 0) {
         setRemaining(activeTurnSeconds);
