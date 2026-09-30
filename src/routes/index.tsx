@@ -541,14 +541,32 @@ function FairTurns() {
       }
       return !r;
     });
-  }, [activeTurnSeconds, remaining, useTimer]);
+  }, [activeTurnSeconds, remaining, turnSeconds, useTimer]);
+
+  const applyTurnSeconds = useCallback(
+    (seconds: number) => {
+      const wasNoTimer = turnSeconds === 0;
+      setTurnSeconds(seconds);
+      setEditingTime(false);
+      if (seconds === 0) {
+        setTimerRunning(false);
+        setTimeUp(false);
+      } else if (wasNoTimer && current) {
+        setRemaining(seconds);
+        setActiveTurnSeconds(seconds);
+        setTimeUp(false);
+        setTimerRunning(true);
+      }
+    },
+    [current, turnSeconds],
+  );
 
   const cycleTurnSeconds = useCallback(() => {
-    const currentIndex = TIMER_PRESETS.findIndex((seconds) => seconds === turnSeconds);
-    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % TIMER_PRESETS.length;
-    setTurnSeconds(TIMER_PRESETS[nextIndex] ?? TIMER_PRESETS[0]);
-    setEditingTime(false);
-  }, [turnSeconds]);
+    const cycle = [...TIMER_PRESETS, 0];
+    const currentIndex = cycle.findIndex((seconds) => seconds === turnSeconds);
+    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % cycle.length;
+    applyTurnSeconds(cycle[nextIndex] ?? TIMER_PRESETS[0]);
+  }, [applyTurnSeconds, turnSeconds]);
 
   useEffect(() => {
     if (screen !== "class") return;
