@@ -190,10 +190,89 @@
   }
 }
 
+@keyframes banner-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+}
+
+@keyframes confetti-burst {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--confetti-x), var(--confetti-y)) rotate(260deg);
+    opacity: 0;
+  }
+}
+
 @utility animate-pop-in {
   animation: pop-in 0.12s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @utility animate-banner-in {
-  animation: banner-in 0.3s ease-out;
+  animation: banner-in 0.15s ease-out;
+}
+
+@utility animate-banner-out {
+  animation: banner-out 0.3s ease-in forwards;
+}
+
+.confetti-burst {
+  pointer-events: none;
+  position: absolute;
+  inset: 50% 12%;
+  z-index: 0;
+}
+
+.confetti-burst span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.45rem;
+  height: 0.7rem;
+  border-radius: 0.15rem;
+  background: var(--color-warning);
+  animation: confetti-burst 0.8s ease-out forwards;
+}
+
+.confetti-burst span:nth-child(4n + 2) { background: var(--color-accent-foreground); }
+.confetti-burst span:nth-child(4n + 3) { background: var(--color-chart-2); }
+.confetti-burst span:nth-child(4n) { background: var(--color-destructive); }
+.confetti-burst span:nth-child(1) { --confetti-x: -15rem; --confetti-y: -4rem; }
+.confetti-burst span:nth-child(2) { --confetti-x: -13rem; --confetti-y: 3rem; }
+.confetti-burst span:nth-child(3) { --confetti-x: -11rem; --confetti-y: -6rem; }
+.confetti-burst span:nth-child(4) { --confetti-x: -9rem; --confetti-y: 5rem; }
+.confetti-burst span:nth-child(5) { --confetti-x: -7rem; --confetti-y: -5rem; }
+.confetti-burst span:nth-child(6) { --confetti-x: -5rem; --confetti-y: 6rem; }
+.confetti-burst span:nth-child(7) { --confetti-x: -3rem; --confetti-y: -7rem; }
+.confetti-burst span:nth-child(8) { --confetti-x: -2rem; --confetti-y: 4rem; }
+.confetti-burst span:nth-child(9) { --confetti-x: -1rem; --confetti-y: -6rem; }
+.confetti-burst span:nth-child(10) { --confetti-x: 0; --confetti-y: 7rem; }
+.confetti-burst span:nth-child(11) { --confetti-x: 1rem; --confetti-y: -7rem; }
+.confetti-burst span:nth-child(12) { --confetti-x: 2rem; --confetti-y: 5rem; }
+.confetti-burst span:nth-child(13) { --confetti-x: 3rem; --confetti-y: -5rem; }
+.confetti-burst span:nth-child(14) { --confetti-x: 5rem; --confetti-y: 6rem; }
+.confetti-burst span:nth-child(15) { --confetti-x: 7rem; --confetti-y: -6rem; }
+.confetti-burst span:nth-child(16) { --confetti-x: 9rem; --confetti-y: 5rem; }
+.confetti-burst span:nth-child(17) { --confetti-x: 11rem; --confetti-y: -5rem; }
+.confetti-burst span:nth-child(18) { --confetti-x: 13rem; --confetti-y: 4rem; }
+.confetti-burst span:nth-child(19) { --confetti-x: 15rem; --confetti-y: -4rem; }
+.confetti-burst span:nth-child(20) { --confetti-x: 16rem; --confetti-y: 2rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-banner-in,
+  .animate-banner-out,
+  .confetti-burst span {
+    animation-duration: 0.01ms;
+  }
 }

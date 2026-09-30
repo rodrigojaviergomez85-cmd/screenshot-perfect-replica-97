@@ -37,8 +37,39 @@ type Student = {
 
 type Screen = "setup" | "class" | "summary";
 
+type RoundBanner = {
+  round: number;
+  message: string;
+  exiting: boolean;
+};
+
 const PLACEHOLDER =
   "Dalia\nEstuardo\nTanya\nArleth\nKaterin\nEduardo\nWalter\nKeily\nMishelle\nJason\nAngela";
+
+const COACH_MESSAGES = [
+  "You are an awesome coach!",
+  "You can do it, coach!",
+  "You got this!",
+  "You are destined for great things!",
+  "You are a fantastic coach!",
+  "Your persistence is paying off!",
+  "This is an Excellent Plus class!",
+  "Every student spoke. That's great teaching!",
+  "Your class is on fire today!",
+  "Keep going, champion coach!",
+] as const;
+
+function shuffleMessages(messages: readonly string[], avoidFirst?: string) {
+  const shuffled = [...messages];
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j] ?? shuffled[i], shuffled[i] ?? shuffled[j]];
+  }
+  if (avoidFirst && shuffled[0] === avoidFirst && shuffled.length > 1) {
+    [shuffled[0], shuffled[1]] = [shuffled[1] ?? shuffled[0], shuffled[0] ?? shuffled[1]];
+  }
+  return shuffled;
+}
 
 function parseNames(raw: string): string[] {
   const seen = new Set<string>();
@@ -95,13 +126,15 @@ function FairTurns() {
   const [students, setStudents] = useState<Student[]>([]);
   const [round, setRound] = useState(1);
   const [currentId, setCurrentId] = useState<string | null>(null);
-  const [banner, setBanner] = useState<string | null>(null);
+  const [banner, setBanner] = useState<RoundBanner | null>(null);
 
   const [remaining, setRemaining] = useState(60);
   const [timerRunning, setTimerRunning] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
 
   const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
+  const messageQueue = useRef<string[]>([]);
+  const lastCoachMessage = useRef<string | undefined>(undefined);
   const [pipWin, setPipWin] = useState<Window | null>(null);
   const [pipSupported, setPipSupported] = useState(false);
   const [compact, setCompact] = useState(false);
@@ -145,6 +178,8 @@ function FairTurns() {
     setRound(1);
     setCurrentId(null);
     setBanner(null);
+    messageQueue.current = [COACH_MESSAGES[0], ...shuffleMessages(COACH_MESSAGES.slice(1))];
+    lastCoachMessage.current = undefined;
     setRemaining(turnSeconds);
     setTimerRunning(false);
     setTimeUp(false);
@@ -152,15 +187,16 @@ function FairTurns() {
   };
 
   const commitPick = useCallback(
-    (picked: Student) => {
+    (picked: Student, startsNewRound = false) => {
       setCurrentId(picked.id);
       setLastPicked({ ...picked, total: picked.total + 1 });
       setStudents((prev) => {
-        const next = prev.map((s) =>
-          s.id === picked.id
-            ? { ...s, doneThisRound: true, total: s.total + 1, roundsCompleted: s.roundsCompleted + 1 }
-            : s,
-        );
+        const next = prev.map((s) => {
+          const base = startsNewRound ? { ...s, doneThisRound: false } : s;
+          return s.id === picked.id
+            ? { ...base, doneThisRound: true, total: s.total + 1, roundsCompleted: s.roundsCompleted + 1 }
+            : base;
+        });
         return next;
       });
       if (useTimer) {
@@ -175,15 +211,29 @@ function FairTurns() {
   useEffect(() => {
     if (screen !== "class" || banner || students.length === 0) return;
     if (!students.every((s) => s.doneThisRound)) return;
-    setBanner(`Round ${round} complete 🎉`);
+    if (messageQueue.current.length === 0) {
+      messageQueue.current = shuffleMessages(COACH_MESSAGES, lastCoachMessage.current);
+    }
+    const message = messageQueue.current.shift() ?? COACH_MESSAGES[0];
+    lastCoachMessage.current = message;
+    setBanner({ round, message, exiting: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [students, screen]);
+
+  useEffect(() => {
+    if (!banner) return;
+    const delay = banner.exiting ? 300 : 2500;
     const t = window.setTimeout(() => {
+      if (!banner.exiting) {
+        setBanner((currentBanner) => currentBanner ? { ...currentBanner, exiting: true } : null);
+        return;
+      }
       setStudents((cur) => cur.map((s) => ({ ...s, doneThisRound: false })));
       setRound((r) => r + 1);
       setBanner(null);
-    }, 1800);
+    }, delay);
     return () => window.clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, screen]);
+  }, [banner]);
 
   const addStudent = () => {
     const name = newName.trim().replace(/\s+/g, " ");
@@ -205,13 +255,17 @@ function FairTurns() {
   const handleNext = useCallback(() => {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
-    if (banner) return;
-    const pool = students.filter((s) => !s.doneThisRound);
+    const startsNewRound = !!banner;
+    const pool = startsNewRound ? students : students.filter((s) => !s.doneThisRound);
     if (pool.length === 0) return;
     lastNextAt.current = now;
     const picked = pool[Math.floor(Math.random() * pool.length)];
     if (!picked) return;
-    commitPick(picked);
+    if (startsNewRound) {
+      setBanner(null);
+      setRound((r) => r + 1);
+    }
+    commitPick(picked, startsNewRound);
   }, [banner, commitPick, students]);
 
   const toggleTimer = useCallback(() => {
@@ -492,13 +546,20 @@ function FairTurns() {
 
   const mini = (
     <div className="relative flex h-full min-h-0 w-full flex-col justify-between gap-2 bg-background p-3 text-foreground">
-      <button
-        onClick={() => setShowRoster((v) => !v)}
-        className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg bg-secondary px-2 py-0.5 text-xs font-bold text-secondary-foreground"
-        aria-label="Roster"
-      >
-        <Users className="h-3.5 w-3.5" /> {students.length}
-      </button>
+      <div className="flex justify-end">
+        <button
+          onClick={() => setShowRoster((v) => !v)}
+          className="z-10 flex items-center gap-1 rounded-lg bg-secondary px-2 py-0.5 text-xs font-bold text-secondary-foreground"
+          aria-label="Roster"
+        >
+          <Users className="h-3.5 w-3.5" /> {students.length}
+        </button>
+      </div>
+      {banner && (
+        <div className={`truncate rounded-lg bg-primary px-2 py-1 text-center text-xs font-bold text-primary-foreground ${banner.exiting ? "animate-banner-out" : "animate-banner-in"}`}>
+          {banner.message}
+        </div>
+      )}
       <p
         key={current ? current.id + String(current.total) : "empty"}
         className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight text-primary"
@@ -522,7 +583,7 @@ function FairTurns() {
       <div className="flex items-center gap-2">
         <Button
           onClick={handleNext}
-          disabled={!!banner || pending.length === 0}
+          disabled={!banner && pending.length === 0}
           className="h-12 flex-1 rounded-2xl text-xl font-extrabold tracking-wide"
         >
           NEXT
@@ -539,7 +600,7 @@ function FairTurns() {
         )}
       </div>
       <p className="text-center text-xs font-semibold text-muted-foreground">
-        {banner ?? `Round ${round} · ${doneCount}/${students.length}`}
+        Round {round} · {doneCount}/{students.length}
       </p>
     </div>
   );
@@ -620,8 +681,14 @@ function FairTurns() {
       </div>
 
       {banner && (
-        <div className="animate-banner-in rounded-2xl bg-primary px-6 py-4 text-center text-2xl font-extrabold text-primary-foreground">
-          {banner}
+        <div className="relative isolate">
+          <div className="confetti-burst" aria-hidden>
+            {Array.from({ length: 20 }, (_, index) => <span key={index} />)}
+          </div>
+          <div className={`relative z-10 rounded-2xl bg-primary px-6 py-4 text-center text-primary-foreground ${banner.exiting ? "animate-banner-out" : "animate-banner-in"}`}>
+            <p className="text-2xl font-extrabold">Round {banner.round} complete 🎉</p>
+            <p className="mt-1 text-base font-semibold">{banner.message}</p>
+          </div>
         </div>
       )}
 
@@ -642,7 +709,7 @@ function FairTurns() {
 
           <Button
             onClick={handleNext}
-            disabled={!!banner || pending.length === 0}
+            disabled={!banner && pending.length === 0}
             className="h-24 w-full max-w-md rounded-3xl text-4xl font-extrabold tracking-wide"
           >
             NEXT
