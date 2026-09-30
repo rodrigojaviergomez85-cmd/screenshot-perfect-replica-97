@@ -66,7 +66,12 @@ function shuffleMessages(messages: readonly string[], avoidFirst?: string) {
     [shuffled[i], shuffled[j]] = [shuffled[j] ?? shuffled[i], shuffled[i] ?? shuffled[j]];
   }
   if (avoidFirst && shuffled[0] === avoidFirst && shuffled.length > 1) {
-    [shuffled[0], shuffled[1]] = [shuffled[1] ?? shuffled[0], shuffled[0] ?? shuffled[1]];
+    const first = shuffled[0];
+    const second = shuffled[1];
+    if (first !== undefined && second !== undefined) {
+      shuffled[0] = second;
+      shuffled[1] = first;
+    }
   }
   return shuffled;
 }
