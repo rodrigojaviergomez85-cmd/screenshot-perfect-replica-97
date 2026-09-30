@@ -460,6 +460,15 @@ function FairTurns() {
     const sorted = [...students].sort((a, b) => a.name.localeCompare(b.name));
     const totals = students.map((s) => s.total);
     const diff = totals.length ? Math.max(...totals) - Math.min(...totals) : 0;
+    const minTotal = totals.length ? Math.min(...totals) : 0;
+    const allDone = students.length > 0 && students.every((s) => s.doneThisRound);
+    const completedRounds = allDone ? round : Math.max(0, round - 1);
+    const inProgress = !allDone && doneCount > 0;
+    const statsLine = `${completedRounds} round${completedRounds === 1 ? "" : "s"} completed${
+      inProgress ? " + 1 in progress" : ""
+    } · ${students.length} student${students.length === 1 ? "" : "s"} · everyone spoke ${minTotal} ${
+      minTotal === 1 ? "time" : "times"
+    }.`;
     const summaryText = [
       "Fair Turns — class summary",
       ...sorted.map((s) => `${s.name}: ${s.total} participations, ${s.roundsCompleted} rounds`),
