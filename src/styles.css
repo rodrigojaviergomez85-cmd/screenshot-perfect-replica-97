@@ -68,11 +68,11 @@
   --accent-tint: hsl(150.8 44% 90%);
   --accent-text: hsl(150.8 65% 15%);
   --background: var(--accent-soft);
-  --foreground: hsl(165 32% 16%);
+  --foreground: hsl(220 18% 15%);
   --card: hsl(0 0% 100%);
-  --card-foreground: hsl(165 32% 16%);
+  --card-foreground: hsl(220 18% 15%);
   --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(165 32% 16%);
+  --popover-foreground: hsl(220 18% 15%);
   --primary: var(--accent);
   --primary-foreground: hsl(0 0% 100%);
   --secondary: var(--accent-tint);

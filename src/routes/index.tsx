@@ -847,7 +847,7 @@ function FairTurns() {
   const progress = students.length ? (doneCount / students.length) * 100 : 0;
   const timeRatio = activeTurnSeconds ? remaining / activeTurnSeconds : 0;
   const timeColor =
-    remaining === 0 ? "text-destructive" : timeRatio <= 0.25 ? "text-warning" : "text-foreground";
+    remaining === 0 ? "text-destructive" : timeRatio <= 0.25 ? "text-warning" : "text-accent-foreground";
   const barColor =
     remaining === 0 ? "bg-destructive" : timeRatio <= 0.25 ? "bg-warning" : "bg-primary";
 
