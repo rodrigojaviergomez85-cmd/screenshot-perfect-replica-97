@@ -962,6 +962,7 @@ function FairTurns() {
 
   // ---------------- class ----------------
   const progress = students.length ? (doneCount / students.length) * 100 : 0;
+  const noTimer = turnSeconds === 0;
   const timeRatio = activeTurnSeconds ? remaining / activeTurnSeconds : 0;
   const timeColor =
     remaining === 0 ? "text-destructive" : timeRatio <= 0.25 ? "text-warning" : "text-accent-foreground";
@@ -969,6 +970,7 @@ function FairTurns() {
     remaining === 0 ? "bg-destructive" : timeRatio <= 0.25 ? "bg-warning" : "bg-primary";
 
   const resetTimer = () => {
+    if (noTimer) return;
     setRemaining(turnSeconds);
     setActiveTurnSeconds(turnSeconds);
     setTimeUp(false);
@@ -976,8 +978,7 @@ function FairTurns() {
   };
 
   const selectTurnSeconds = (seconds: number) => {
-    setTurnSeconds(seconds);
-    setEditingTime(false);
+    applyTurnSeconds(seconds);
   };
 
   const beginCustomTime = () => {
