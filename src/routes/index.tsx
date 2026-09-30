@@ -634,7 +634,7 @@ function FairTurns() {
                           onChange={() => setAccentColor(option.id)}
                           className="sr-only"
                         />
-                        <span className={`flex size-9 items-center justify-center rounded-full border-2 ${option.swatch} ${accentColor === option.id ? "border-foreground" : "border-transparent"}`}>
+                        <span className={`pointer-events-none flex size-9 items-center justify-center rounded-full border-2 ${option.swatch} ${accentColor === option.id ? "border-foreground" : "border-transparent"}`}>
                           {accentColor === option.id && <Check className="h-4 w-4 text-primary-foreground" />}
                         </span>
                         {option.label}
