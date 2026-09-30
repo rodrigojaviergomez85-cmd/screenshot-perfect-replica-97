@@ -74,6 +74,7 @@ type AccentColor = (typeof ACCENT_OPTIONS)[number]["id"];
 const COLOR_STORAGE_KEY = "fair-turns-accent";
 const MESSAGES_STORAGE_KEY = "fair-turns-messages";
 const SHOW_MESSAGES_STORAGE_KEY = "fair-turns-show-messages";
+const TIMER_STORAGE_KEY = "fair-turns-time";
 
 function shuffleMessages(messages: readonly string[], avoidFirst?: string) {
   const shuffled = [...messages];
@@ -216,6 +217,17 @@ function TimerLengthControls({
           {customValue === null ? "✎" : `${customValue}s`}
         </Button>
       )}
+      <Button
+        type="button"
+        size="sm"
+        variant={value === 0 ? "default" : "outline"}
+        className="h-6 min-w-10 rounded-md px-2 text-xs font-bold"
+        onClick={() => onSelect(0)}
+        title="No timer"
+        aria-label="No timer"
+      >
+        ∞
+      </Button>
     </div>
   );
 }
@@ -290,6 +302,13 @@ function FairTurns() {
       }
       const savedShowMessages = window.localStorage.getItem(SHOW_MESSAGES_STORAGE_KEY);
       if (savedShowMessages !== null) setShowCoachMessages(savedShowMessages !== "false");
+      const savedTime = window.localStorage.getItem(TIMER_STORAGE_KEY);
+      if (savedTime !== null) {
+        const seconds = Number(savedTime);
+        if (Number.isInteger(seconds) && (seconds === 0 || (seconds >= 5 && seconds <= 300))) {
+          setTurnSeconds(seconds);
+        }
+      }
     } catch {
       /* Invalid or unavailable browser storage falls back to defaults. */
     }
@@ -303,10 +322,11 @@ function FairTurns() {
       window.localStorage.setItem(COLOR_STORAGE_KEY, accentColor);
       window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(coachMessages));
       window.localStorage.setItem(SHOW_MESSAGES_STORAGE_KEY, String(showCoachMessages));
+      window.localStorage.setItem(TIMER_STORAGE_KEY, String(turnSeconds));
     } catch {
       /* The app remains fully usable when browser storage is unavailable. */
     }
-  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages]);
+  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, turnSeconds]);
 
   useEffect(() => () => {
     if (undoMessageTimer.current !== null) window.clearTimeout(undoMessageTimer.current);
@@ -372,11 +392,14 @@ function FairTurns() {
         });
         return next;
       });
-      if (useTimer) {
+      if (useTimer && turnSeconds > 0) {
         setRemaining(turnSeconds);
         setActiveTurnSeconds(turnSeconds);
         setTimeUp(false);
         setTimerRunning(true);
+      } else {
+        setTimerRunning(false);
+        setTimeUp(false);
       }
     },
     [turnSeconds, useTimer],
@@ -510,7 +533,7 @@ function FairTurns() {
   };
 
   const toggleTimer = useCallback(() => {
-    if (!useTimer) return;
+    if (!useTimer || turnSeconds === 0) return;
     setTimerRunning((r) => {
       if (!r && remaining === 0) {
         setRemaining(activeTurnSeconds);
@@ -518,14 +541,32 @@ function FairTurns() {
       }
       return !r;
     });
-  }, [activeTurnSeconds, remaining, useTimer]);
+  }, [activeTurnSeconds, remaining, turnSeconds, useTimer]);
+
+  const applyTurnSeconds = useCallback(
+    (seconds: number) => {
+      const wasNoTimer = turnSeconds === 0;
+      setTurnSeconds(seconds);
+      setEditingTime(false);
+      if (seconds === 0) {
+        setTimerRunning(false);
+        setTimeUp(false);
+      } else if (wasNoTimer && current) {
+        setRemaining(seconds);
+        setActiveTurnSeconds(seconds);
+        setTimeUp(false);
+        setTimerRunning(true);
+      }
+    },
+    [current, turnSeconds],
+  );
 
   const cycleTurnSeconds = useCallback(() => {
-    const currentIndex = TIMER_PRESETS.findIndex((seconds) => seconds === turnSeconds);
-    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % TIMER_PRESETS.length;
-    setTurnSeconds(TIMER_PRESETS[nextIndex] ?? TIMER_PRESETS[0]);
-    setEditingTime(false);
-  }, [turnSeconds]);
+    const cycle = [...TIMER_PRESETS, 0];
+    const currentIndex = cycle.findIndex((seconds) => seconds === turnSeconds);
+    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % cycle.length;
+    applyTurnSeconds(cycle[nextIndex] ?? TIMER_PRESETS[0]);
+  }, [applyTurnSeconds, turnSeconds]);
 
   useEffect(() => {
     if (screen !== "class") return;
@@ -921,6 +962,7 @@ function FairTurns() {
 
   // ---------------- class ----------------
   const progress = students.length ? (doneCount / students.length) * 100 : 0;
+  const noTimer = turnSeconds === 0;
   const timeRatio = activeTurnSeconds ? remaining / activeTurnSeconds : 0;
   const timeColor =
     remaining === 0 ? "text-destructive" : timeRatio <= 0.25 ? "text-warning" : "text-accent-foreground";
@@ -928,6 +970,7 @@ function FairTurns() {
     remaining === 0 ? "bg-destructive" : timeRatio <= 0.25 ? "bg-warning" : "bg-primary";
 
   const resetTimer = () => {
+    if (noTimer) return;
     setRemaining(turnSeconds);
     setActiveTurnSeconds(turnSeconds);
     setTimeUp(false);
@@ -935,8 +978,7 @@ function FairTurns() {
   };
 
   const selectTurnSeconds = (seconds: number) => {
-    setTurnSeconds(seconds);
-    setEditingTime(false);
+    applyTurnSeconds(seconds);
   };
 
   const beginCustomTime = () => {
@@ -948,8 +990,7 @@ function FairTurns() {
     const seconds = Math.min(300, Math.max(5, Math.round(Number(customDraft))));
     if (!Number.isFinite(seconds)) return;
     setCustomSeconds(seconds);
-    setTurnSeconds(seconds);
-    setEditingTime(false);
+    applyTurnSeconds(seconds);
   };
 
   const timerLengthControls = (
@@ -1022,14 +1063,16 @@ function FairTurns() {
       {showRoster && rosterPanel}
       {useTimer && (
         <div className="space-y-1">
-          <p className={`text-center text-2xl font-extrabold tabular-nums ${timeColor}`}>
-            {remaining === 0 && timeUp ? "Time's up" : mmss(remaining)}
-          </p>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-            <div
-              className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
-              style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
-            />
+          <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
+            <p className={`text-center text-2xl font-extrabold tabular-nums ${timeColor}`}>
+              {remaining === 0 && timeUp ? "Time's up" : mmss(remaining)}
+            </p>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+              <div
+                className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
+                style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
+              />
+            </div>
           </div>
           {timerLengthControls}
         </div>
@@ -1047,7 +1090,7 @@ function FairTurns() {
         </Button>
         {useTimer && (
           <>
-            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
+            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
               {timerRunning ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
             </Button>
             <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={resetTimer} aria-label="Reset">
@@ -1060,7 +1103,7 @@ function FairTurns() {
         <button onClick={undoSkip} className="text-center text-xs font-bold text-primary underline">Undo skip</button>
       )}
       <p className="text-center text-xs font-semibold text-muted-foreground">
-        Round {round} · {doneCount}/{students.length} · {turnSeconds}s
+        Round {round} · {doneCount}/{students.length} · {noTimer ? "no timer" : `${turnSeconds}s`}
       </p>
     </div>
   );
@@ -1204,19 +1247,21 @@ function FairTurns() {
         <div className="flex flex-col gap-6">
           {useTimer && (
             <div className="soft-card space-y-4 p-6 text-center">
-              <p className={`font-[family-name:var(--font-display)] text-7xl font-extrabold tabular-nums ${timeColor}`}>
-                {mmss(remaining)}
-              </p>
-              <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
-                <div
-                  className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
-                  style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
-                />
+              <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
+                <p className={`font-[family-name:var(--font-display)] text-7xl font-extrabold tabular-nums ${timeColor}`}>
+                  {mmss(remaining)}
+                </p>
+                <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
+                    style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
+                  />
+                </div>
               </div>
               {timerLengthControls}
-              {timeUp && <p className="text-lg font-bold text-destructive">Time's up</p>}
+              {!noTimer && timeUp && <p className="text-lg font-bold text-destructive">Time's up</p>}
               <div className="flex justify-center gap-2">
-                <Button variant="outline" className="rounded-xl" onClick={toggleTimer}>
+                <Button variant="outline" className="rounded-xl" onClick={toggleTimer} disabled={noTimer}>
                   {timerRunning ? "Pause" : "Resume"}
                 </Button>
                 <Button
