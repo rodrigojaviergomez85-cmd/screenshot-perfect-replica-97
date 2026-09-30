@@ -684,6 +684,8 @@ function FairTurns() {
             className="rounded-xl"
             onClick={() => {
               setTimerRunning(false);
+              const [next] = shuffleMessages(COACH_MESSAGES, lastCoachMessage.current);
+              setClosingMessage(next ?? COACH_MESSAGES[0]);
               setScreen("summary");
             }}
           >
