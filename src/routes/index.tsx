@@ -302,6 +302,13 @@ function FairTurns() {
       }
       const savedShowMessages = window.localStorage.getItem(SHOW_MESSAGES_STORAGE_KEY);
       if (savedShowMessages !== null) setShowCoachMessages(savedShowMessages !== "false");
+      const savedTime = window.localStorage.getItem(TIMER_STORAGE_KEY);
+      if (savedTime !== null) {
+        const seconds = Number(savedTime);
+        if (Number.isInteger(seconds) && (seconds === 0 || (seconds >= 5 && seconds <= 300))) {
+          setTurnSeconds(seconds);
+        }
+      }
     } catch {
       /* Invalid or unavailable browser storage falls back to defaults. */
     }
@@ -315,10 +322,11 @@ function FairTurns() {
       window.localStorage.setItem(COLOR_STORAGE_KEY, accentColor);
       window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(coachMessages));
       window.localStorage.setItem(SHOW_MESSAGES_STORAGE_KEY, String(showCoachMessages));
+      window.localStorage.setItem(TIMER_STORAGE_KEY, String(turnSeconds));
     } catch {
       /* The app remains fully usable when browser storage is unavailable. */
     }
-  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages]);
+  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, turnSeconds]);
 
   useEffect(() => () => {
     if (undoMessageTimer.current !== null) window.clearTimeout(undoMessageTimer.current);
