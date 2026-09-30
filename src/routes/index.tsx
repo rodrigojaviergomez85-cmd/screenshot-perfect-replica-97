@@ -930,7 +930,7 @@ function FairTurns() {
           <Users className="h-3.5 w-3.5" /> {students.length}
         </button>
       </div>
-      {banner && (
+      {banner?.message && (
         <div className={`truncate rounded-lg bg-primary px-2 py-1 text-center text-xs font-bold text-primary-foreground ${banner.exiting ? "animate-banner-out" : "animate-banner-in"}`}>
           {banner.message}
         </div>
