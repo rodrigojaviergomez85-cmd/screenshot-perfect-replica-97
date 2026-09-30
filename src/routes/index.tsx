@@ -72,6 +72,7 @@ type AccentColor = (typeof ACCENT_OPTIONS)[number]["id"];
 
 const COLOR_STORAGE_KEY = "fair-turns-accent";
 const MESSAGES_STORAGE_KEY = "fair-turns-messages";
+const SHOW_MESSAGES_STORAGE_KEY = "fair-turns-show-messages";
 
 function shuffleMessages(messages: readonly string[], avoidFirst?: string) {
   const shuffled = [...messages];
@@ -238,12 +239,15 @@ function FairTurns() {
   const [customDraft, setCustomDraft] = useState("");
   const [accentColor, setAccentColor] = useState<AccentColor>("green");
   const [coachMessages, setCoachMessages] = useState<string[]>([...COACH_MESSAGES]);
+  const [showCoachMessages, setShowCoachMessages] = useState(true);
+  const [deletedCoachMessage, setDeletedCoachMessage] = useState<{ message: string; index: number } | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
   const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
   const messageQueue = useRef<string[]>([]);
   const lastCoachMessage = useRef<string | undefined>(undefined);
+  const undoMessageTimer = useRef<number | null>(null);
   const [pipWin, setPipWin] = useState<Window | null>(null);
   const [pipSupported, setPipSupported] = useState(false);
   const [compact, setCompact] = useState(false);
@@ -257,8 +261,7 @@ function FairTurns() {
   const doneCount = students.length - pending.length;
   const current = students.find((s) => s.id === currentId) ?? (currentId ? lastPicked : null);
   const activeMessages = useMemo(() => {
-    const cleaned = coachMessages.map((message) => message.trim()).filter(Boolean);
-    return cleaned.length > 0 ? cleaned : [...COACH_MESSAGES];
+    return coachMessages.map((message) => message.trim()).filter(Boolean);
   }, [coachMessages]);
 
   useEffect(() => {
@@ -279,6 +282,8 @@ function FairTurns() {
           );
         }
       }
+      const savedShowMessages = window.localStorage.getItem(SHOW_MESSAGES_STORAGE_KEY);
+      if (savedShowMessages !== null) setShowCoachMessages(savedShowMessages !== "false");
     } catch {
       /* Invalid or unavailable browser storage falls back to defaults. */
     }
@@ -291,10 +296,15 @@ function FairTurns() {
     try {
       window.localStorage.setItem(COLOR_STORAGE_KEY, accentColor);
       window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(coachMessages));
+      window.localStorage.setItem(SHOW_MESSAGES_STORAGE_KEY, String(showCoachMessages));
     } catch {
       /* The app remains fully usable when browser storage is unavailable. */
     }
-  }, [accentColor, coachMessages, preferencesLoaded]);
+  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages]);
+
+  useEffect(() => () => {
+    if (undoMessageTimer.current !== null) window.clearTimeout(undoMessageTimer.current);
+  }, []);
 
   useEffect(() => {
     if (pipWin) pipWin.document.documentElement.dataset["accent"] = accentColor;
@@ -332,9 +342,9 @@ function FairTurns() {
     setCurrentId(null);
     setBanner(null);
     const [firstMessage, ...laterMessages] = activeMessages;
-    messageQueue.current = firstMessage
+    messageQueue.current = showCoachMessages && firstMessage
       ? [firstMessage, ...shuffleMessages(laterMessages)]
-      : [...COACH_MESSAGES];
+      : [];
     lastCoachMessage.current = undefined;
     setRemaining(turnSeconds);
     setActiveTurnSeconds(turnSeconds);
@@ -369,14 +379,14 @@ function FairTurns() {
   useEffect(() => {
     if (screen !== "class" || banner || students.length === 0) return;
     if (!students.every((s) => s.doneThisRound)) return;
-    if (messageQueue.current.length === 0) {
+    if (showCoachMessages && messageQueue.current.length === 0 && activeMessages.length > 0) {
       messageQueue.current = shuffleMessages(activeMessages, lastCoachMessage.current);
     }
-    const message = messageQueue.current.shift() ?? activeMessages[0] ?? COACH_MESSAGES[0];
-    lastCoachMessage.current = message;
+    const message = showCoachMessages ? (messageQueue.current.shift() ?? "") : "";
+    if (message) lastCoachMessage.current = message;
     setBanner({ round, message, exiting: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, screen, activeMessages, banner, round]);
+  }, [students, screen, activeMessages, banner, round, showCoachMessages]);
 
   useEffect(() => {
     if (!banner) return;
@@ -535,7 +545,27 @@ function FairTurns() {
   };
 
   const removeCoachMessage = (index: number) => {
+    const message = coachMessages[index];
+    if (message === undefined) return;
     setCoachMessages((currentMessages) => currentMessages.filter((_, messageIndex) => messageIndex !== index));
+    setDeletedCoachMessage({ message, index });
+    if (undoMessageTimer.current !== null) window.clearTimeout(undoMessageTimer.current);
+    undoMessageTimer.current = window.setTimeout(() => {
+      setDeletedCoachMessage(null);
+      undoMessageTimer.current = null;
+    }, 5000);
+  };
+
+  const undoRemoveCoachMessage = () => {
+    if (!deletedCoachMessage) return;
+    setCoachMessages((currentMessages) => {
+      const restored = [...currentMessages];
+      restored.splice(Math.min(deletedCoachMessage.index, restored.length), 0, deletedCoachMessage.message);
+      return restored.slice(0, 20);
+    });
+    setDeletedCoachMessage(null);
+    if (undoMessageTimer.current !== null) window.clearTimeout(undoMessageTimer.current);
+    undoMessageTimer.current = null;
   };
 
   // ---------------- setup ----------------
@@ -648,6 +678,15 @@ function FairTurns() {
                     <p className="text-sm font-semibold">Motivational messages</p>
                     <span className="text-xs text-muted-foreground">{coachMessages.length}/20</span>
                   </div>
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={showCoachMessages}
+                      onChange={(event) => setShowCoachMessages(event.target.checked)}
+                      className="size-5 accent-[var(--color-primary)]"
+                    />
+                    Show motivational messages
+                  </label>
                   <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
                     {coachMessages.map((message, index) => (
                       <div key={index} className="flex items-center gap-2">
@@ -661,9 +700,9 @@ function FairTurns() {
                         />
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="icon"
-                          className="h-9 w-9 shrink-0 rounded-lg"
+                          className="h-9 w-9 shrink-0 rounded-lg text-destructive"
                           aria-label={`Delete message ${index + 1}`}
                           onClick={() => removeCoachMessage(index)}
                         >
@@ -673,7 +712,12 @@ function FairTurns() {
                     ))}
                   </div>
                   {coachMessages.length === 0 && (
-                    <p className="text-xs text-muted-foreground">The default messages will be used.</p>
+                    <p className="text-xs text-muted-foreground">No messages — add one or Reset to default</p>
+                  )}
+                  {deletedCoachMessage && (
+                    <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={undoRemoveCoachMessage}>
+                      Undo
+                    </Button>
                   )}
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -886,7 +930,7 @@ function FairTurns() {
           <Users className="h-3.5 w-3.5" /> {students.length}
         </button>
       </div>
-      {banner && (
+      {banner?.message && (
         <div className={`truncate rounded-lg bg-primary px-2 py-1 text-center text-xs font-bold text-primary-foreground ${banner.exiting ? "animate-banner-out" : "animate-banner-in"}`}>
           {banner.message}
         </div>
@@ -992,8 +1036,10 @@ function FairTurns() {
             className="rounded-xl"
             onClick={() => {
               setTimerRunning(false);
-              const [next] = shuffleMessages(activeMessages, lastCoachMessage.current);
-              setClosingMessage(next ?? activeMessages[0] ?? COACH_MESSAGES[0]);
+              const [next] = showCoachMessages
+                ? shuffleMessages(activeMessages, lastCoachMessage.current)
+                : [];
+              setClosingMessage(next ?? null);
               setScreen("summary");
             }}
           >
@@ -1024,7 +1070,7 @@ function FairTurns() {
           </div>
           <div className={`relative z-10 rounded-2xl bg-primary px-6 py-4 text-center text-primary-foreground ${banner.exiting ? "animate-banner-out" : "animate-banner-in"}`}>
             <p className="text-2xl font-extrabold">Round {banner.round} complete 🎉</p>
-            <p className="mt-1 text-base font-semibold">{banner.message}</p>
+            {banner.message && <p className="mt-1 text-base font-semibold">{banner.message}</p>}
           </div>
         </div>
       )}
