@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Maximize2, Minimize2, Pause, PictureInPicture2, Play, RotateCcw, Users, X, Check } from "lucide-react";
+import { Check, ChevronDown, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Button } from "@/components/ui/button";
 
@@ -60,6 +60,18 @@ const COACH_MESSAGES = [
 ] as const;
 
 const TIMER_PRESETS = [10, 15, 30, 60] as const;
+const ACCENT_OPTIONS = [
+  { id: "green", label: "Green", swatch: "bg-swatch-green" },
+  { id: "blue", label: "Blue", swatch: "bg-swatch-blue" },
+  { id: "purple", label: "Purple", swatch: "bg-swatch-purple" },
+  { id: "orange", label: "Orange", swatch: "bg-swatch-orange" },
+  { id: "teal", label: "Teal", swatch: "bg-swatch-teal" },
+  { id: "pink", label: "Pink", swatch: "bg-swatch-pink" },
+] as const;
+type AccentColor = (typeof ACCENT_OPTIONS)[number]["id"];
+
+const COLOR_STORAGE_KEY = "fair-turns-accent";
+const MESSAGES_STORAGE_KEY = "fair-turns-messages";
 
 function shuffleMessages(messages: readonly string[], avoidFirst?: string) {
   const shuffled = [...messages];
@@ -224,6 +236,10 @@ function FairTurns() {
   const [customSeconds, setCustomSeconds] = useState<number | null>(null);
   const [editingTime, setEditingTime] = useState(false);
   const [customDraft, setCustomDraft] = useState("");
+  const [accentColor, setAccentColor] = useState<AccentColor>("green");
+  const [coachMessages, setCoachMessages] = useState<string[]>([...COACH_MESSAGES]);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
   const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
   const messageQueue = useRef<string[]>([]);
@@ -240,6 +256,49 @@ function FairTurns() {
   const pending = useMemo(() => students.filter((s) => !s.doneThisRound), [students]);
   const doneCount = students.length - pending.length;
   const current = students.find((s) => s.id === currentId) ?? (currentId ? lastPicked : null);
+  const activeMessages = useMemo(() => {
+    const cleaned = coachMessages.map((message) => message.trim()).filter(Boolean);
+    return cleaned.length > 0 ? cleaned : [...COACH_MESSAGES];
+  }, [coachMessages]);
+
+  useEffect(() => {
+    try {
+      const savedColor = window.localStorage.getItem(COLOR_STORAGE_KEY);
+      if (ACCENT_OPTIONS.some((option) => option.id === savedColor)) {
+        setAccentColor(savedColor as AccentColor);
+      }
+      const savedMessages = window.localStorage.getItem(MESSAGES_STORAGE_KEY);
+      if (savedMessages) {
+        const parsedMessages: unknown = JSON.parse(savedMessages);
+        if (Array.isArray(parsedMessages)) {
+          setCoachMessages(
+            parsedMessages
+              .filter((message): message is string => typeof message === "string")
+              .slice(0, 20)
+              .map((message) => message.slice(0, 60)),
+          );
+        }
+      }
+    } catch {
+      /* Invalid or unavailable browser storage falls back to defaults. */
+    }
+    setPreferencesLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset["accent"] = accentColor;
+    if (!preferencesLoaded) return;
+    try {
+      window.localStorage.setItem(COLOR_STORAGE_KEY, accentColor);
+      window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(coachMessages));
+    } catch {
+      /* The app remains fully usable when browser storage is unavailable. */
+    }
+  }, [accentColor, coachMessages, preferencesLoaded]);
+
+  useEffect(() => {
+    if (pipWin) pipWin.document.documentElement.dataset["accent"] = accentColor;
+  }, [accentColor, pipWin]);
 
   // ---- timer ----
   useEffect(() => {
@@ -272,7 +331,10 @@ function FairTurns() {
     setRound(1);
     setCurrentId(null);
     setBanner(null);
-    messageQueue.current = [COACH_MESSAGES[0], ...shuffleMessages(COACH_MESSAGES.slice(1))];
+    const [firstMessage, ...laterMessages] = activeMessages;
+    messageQueue.current = firstMessage
+      ? [firstMessage, ...shuffleMessages(laterMessages)]
+      : [...COACH_MESSAGES];
     lastCoachMessage.current = undefined;
     setRemaining(turnSeconds);
     setActiveTurnSeconds(turnSeconds);
@@ -308,13 +370,13 @@ function FairTurns() {
     if (screen !== "class" || banner || students.length === 0) return;
     if (!students.every((s) => s.doneThisRound)) return;
     if (messageQueue.current.length === 0) {
-      messageQueue.current = shuffleMessages(COACH_MESSAGES, lastCoachMessage.current);
+      messageQueue.current = shuffleMessages(activeMessages, lastCoachMessage.current);
     }
-    const message = messageQueue.current.shift() ?? COACH_MESSAGES[0];
+    const message = messageQueue.current.shift() ?? activeMessages[0] ?? COACH_MESSAGES[0];
     lastCoachMessage.current = message;
     setBanner({ round, message, exiting: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, screen]);
+  }, [students, screen, activeMessages, banner, round]);
 
   useEffect(() => {
     if (!banner) return;
@@ -424,6 +486,7 @@ function FairTurns() {
         w.document.head.appendChild(node.cloneNode(true));
       });
       w.document.documentElement.className = document.documentElement.className;
+      w.document.documentElement.dataset["accent"] = accentColor;
       w.document.body.style.margin = "0";
       w.document.body.style.height = "100vh";
       w.document.body.style.display = "flex";
@@ -465,6 +528,16 @@ function FairTurns() {
     setScreen("setup");
   };
 
+  const updateCoachMessage = (index: number, value: string) => {
+    setCoachMessages((currentMessages) =>
+      currentMessages.map((message, messageIndex) => messageIndex === index ? value.slice(0, 60) : message),
+    );
+  };
+
+  const removeCoachMessage = (index: number) => {
+    setCoachMessages((currentMessages) => currentMessages.filter((_, messageIndex) => messageIndex !== index));
+  };
+
   // ---------------- setup ----------------
   if (screen === "setup") {
     const editing = students.length > 0;
@@ -474,9 +547,12 @@ function FairTurns() {
           <span className="inline-flex items-center rounded-full bg-accent px-3 py-1 text-xs font-semibold uppercase tracking-widest text-accent-foreground">
             Fair participation
           </span>
-          <h1 className="font-[family-name:var(--font-display)] text-5xl font-extrabold tracking-tight">
-            Fair Turns
-          </h1>
+          <div className="flex items-center gap-3">
+            <h1 className="font-[family-name:var(--font-display)] text-5xl font-extrabold tracking-tight">
+              Fair Turns
+            </h1>
+            <span className="size-3 rounded-full bg-primary" aria-label={`${accentColor} interface color`} />
+          </div>
           <p className="text-lg text-muted-foreground">
             Nobody participates twice until everyone has participated once.
           </p>
@@ -529,6 +605,100 @@ function FairTurns() {
                 className="w-32 rounded-xl border border-input bg-background px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
               />
             </div>
+          </div>
+
+          <div className="border-t border-border pt-5">
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto gap-2 p-0 text-sm font-bold text-foreground"
+              aria-expanded={preferencesOpen}
+              onClick={() => setPreferencesOpen((open) => !open)}
+            >
+              Preferences (color &amp; messages)
+              <ChevronDown className={`h-4 w-4 transition-transform ${preferencesOpen ? "rotate-180" : ""}`} />
+            </Button>
+
+            {preferencesOpen && (
+              <div className="mt-5 space-y-6">
+                <fieldset className="space-y-3">
+                  <legend className="text-sm font-semibold">Interface color</legend>
+                  <div className="flex flex-wrap gap-3">
+                    {ACCENT_OPTIONS.map((option) => (
+                      <label key={option.id} className="flex cursor-pointer flex-col items-center gap-1.5 text-xs font-semibold">
+                        <input
+                          type="radio"
+                          name="accent-color"
+                          value={option.id}
+                          checked={accentColor === option.id}
+                          onChange={() => setAccentColor(option.id)}
+                          className="sr-only"
+                        />
+                        <span className={`pointer-events-none flex size-9 items-center justify-center rounded-full border-2 ${option.swatch} ${accentColor === option.id ? "border-foreground" : "border-transparent"}`}>
+                          {accentColor === option.id && <Check className="h-4 w-4 text-primary-foreground" />}
+                        </span>
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">Motivational messages</p>
+                    <span className="text-xs text-muted-foreground">{coachMessages.length}/20</span>
+                  </div>
+                  <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                    {coachMessages.map((message, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          maxLength={60}
+                          value={message}
+                          aria-label={`Motivational message ${index + 1}`}
+                          onChange={(event) => updateCoachMessage(index, event.target.value)}
+                          className="h-9 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-9 w-9 shrink-0 rounded-lg"
+                          aria-label={`Delete message ${index + 1}`}
+                          onClick={() => removeCoachMessage(index)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  {coachMessages.length === 0 && (
+                    <p className="text-xs text-muted-foreground">The default messages will be used.</p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="rounded-lg"
+                      disabled={coachMessages.length >= 20}
+                      onClick={() => setCoachMessages((messages) => [...messages, ""])}
+                    >
+                      <Plus className="mr-1 h-4 w-4" /> Add message
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="rounded-lg"
+                      onClick={() => setCoachMessages([...COACH_MESSAGES])}
+                    >
+                      Reset to default
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-3">
@@ -786,9 +956,12 @@ function FairTurns() {
       {pipPortal}
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-baseline gap-4">
-          <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight">
-            Fair Turns
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight">
+              Fair Turns
+            </h1>
+            <span className="size-2.5 rounded-full bg-primary" aria-label={`${accentColor} interface color`} />
+          </div>
           <span className="rounded-full bg-accent px-3 py-1 text-sm font-bold text-accent-foreground">
             Round {round}
           </span>
@@ -818,8 +991,8 @@ function FairTurns() {
             className="rounded-xl"
             onClick={() => {
               setTimerRunning(false);
-              const [next] = shuffleMessages(COACH_MESSAGES, lastCoachMessage.current);
-              setClosingMessage(next ?? COACH_MESSAGES[0]);
+              const [next] = shuffleMessages(activeMessages, lastCoachMessage.current);
+              setClosingMessage(next ?? activeMessages[0] ?? COACH_MESSAGES[0]);
               setScreen("summary");
             }}
           >
