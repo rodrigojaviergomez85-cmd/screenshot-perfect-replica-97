@@ -151,6 +151,7 @@ function FairTurns() {
   const [lastPicked, setLastPicked] = useState<Student | null>(null);
   const [showRoster, setShowRoster] = useState(false);
   const [newName, setNewName] = useState("");
+  const [closingMessage, setClosingMessage] = useState<string | null>(null);
 
   const parsed = useMemo(() => parseNames(rosterText), [rosterText]);
   const pending = useMemo(() => students.filter((s) => !s.doneThisRound), [students]);
@@ -360,6 +361,7 @@ function FairTurns() {
     setRosterText("");
     setRound(1);
     setCurrentId(null);
+    setClosingMessage(null);
     setScreen("setup");
   };
 
@@ -459,6 +461,15 @@ function FairTurns() {
     const sorted = [...students].sort((a, b) => a.name.localeCompare(b.name));
     const totals = students.map((s) => s.total);
     const diff = totals.length ? Math.max(...totals) - Math.min(...totals) : 0;
+    const minTotal = totals.length ? Math.min(...totals) : 0;
+    const allDone = students.length > 0 && students.every((s) => s.doneThisRound);
+    const completedRounds = allDone ? round : Math.max(0, round - 1);
+    const inProgress = !allDone && doneCount > 0;
+    const statsLine = `${completedRounds} round${completedRounds === 1 ? "" : "s"} completed${
+      inProgress ? " + 1 in progress" : ""
+    } · ${students.length} student${students.length === 1 ? "" : "s"} · everyone spoke ${minTotal} ${
+      minTotal === 1 ? "time" : "times"
+    }.`;
     const summaryText = [
       "Fair Turns — class summary",
       ...sorted.map((s) => `${s.name}: ${s.total} participations, ${s.roundsCompleted} rounds`),
@@ -470,6 +481,13 @@ function FairTurns() {
         <h1 className="font-[family-name:var(--font-display)] text-4xl font-extrabold tracking-tight">
           Class summary
         </h1>
+        <section className="animate-banner-in rounded-2xl bg-primary px-6 py-5 text-center text-primary-foreground">
+          <p className="font-[family-name:var(--font-display)] text-3xl font-extrabold sm:text-4xl">
+            Great class, coach!
+          </p>
+          <p className="mt-2 text-base font-semibold">{statsLine}</p>
+          {closingMessage && <p className="mt-1 text-base font-semibold italic">{closingMessage}</p>}
+        </section>
         <section className="soft-card overflow-hidden">
           <table className="w-full text-left">
             <thead className="bg-secondary text-sm uppercase tracking-wide text-secondary-foreground">
@@ -667,6 +685,8 @@ function FairTurns() {
             className="rounded-xl"
             onClick={() => {
               setTimerRunning(false);
+              const [next] = shuffleMessages(COACH_MESSAGES, lastCoachMessage.current);
+              setClosingMessage(next ?? COACH_MESSAGES[0]);
               setScreen("summary");
             }}
           >
