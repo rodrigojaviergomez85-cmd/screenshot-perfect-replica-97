@@ -74,6 +74,7 @@ type AccentColor = (typeof ACCENT_OPTIONS)[number]["id"];
 const COLOR_STORAGE_KEY = "fair-turns-accent";
 const MESSAGES_STORAGE_KEY = "fair-turns-messages";
 const SHOW_MESSAGES_STORAGE_KEY = "fair-turns-show-messages";
+const TIMER_STORAGE_KEY = "fair-turns-time";
 
 function shuffleMessages(messages: readonly string[], avoidFirst?: string) {
   const shuffled = [...messages];
@@ -216,6 +217,17 @@ function TimerLengthControls({
           {customValue === null ? "✎" : `${customValue}s`}
         </Button>
       )}
+      <Button
+        type="button"
+        size="sm"
+        variant={value === 0 ? "default" : "outline"}
+        className="h-6 min-w-10 rounded-md px-2 text-xs font-bold"
+        onClick={() => onSelect(0)}
+        title="No timer"
+        aria-label="No timer"
+      >
+        ∞
+      </Button>
     </div>
   );
 }
