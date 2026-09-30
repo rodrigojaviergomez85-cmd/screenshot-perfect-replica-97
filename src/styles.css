@@ -133,10 +133,10 @@
 }
 
 :root[data-accent="yellow"] {
-  --accent: hsl(45 100% 27%);
-  --accent-soft: hsl(45 85% 96%);
-  --accent-tint: hsl(45 78% 90%);
-  --accent-text: hsl(45 85% 15%);
+  --accent: hsl(60 100% 30%);
+  --accent-soft: hsl(60 70% 96%);
+  --accent-tint: hsl(60 66% 90%);
+  --accent-text: hsl(60 85% 15%);
 }
 
 .dark {
@@ -211,7 +211,7 @@
 }
 
 @utility bg-swatch-yellow {
-  background-color: hsl(45 100% 27%);
+  background-color: hsl(60 100% 30%);
 }
 
 @utility bg-swatch-blue {
