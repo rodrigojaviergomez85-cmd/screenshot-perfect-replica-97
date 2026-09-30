@@ -59,6 +59,8 @@ const COACH_MESSAGES = [
   "Keep going, champion coach!",
 ] as const;
 
+const TIMER_PRESETS = [10, 15, 30, 60] as const;
+
 function shuffleMessages(messages: readonly string[], avoidFirst?: string) {
   const shuffled = [...messages];
   for (let i = shuffled.length - 1; i > 0; i -= 1) {
@@ -127,6 +129,83 @@ function playBeep() {
   }
 }
 
+type TimerLengthControlsProps = {
+  value: number;
+  customValue: number | null;
+  editing: boolean;
+  draft: string;
+  onSelect: (seconds: number) => void;
+  onEdit: () => void;
+  onDraftChange: (value: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+};
+
+function TimerLengthControls({
+  value,
+  customValue,
+  editing,
+  draft,
+  onSelect,
+  onEdit,
+  onDraftChange,
+  onConfirm,
+  onCancel,
+}: TimerLengthControlsProps) {
+  return (
+    <div className="flex min-h-6 flex-wrap items-center justify-center gap-1" aria-label="Turn length">
+      {TIMER_PRESETS.map((seconds) => (
+        <Button
+          key={seconds}
+          type="button"
+          size="sm"
+          variant={value === seconds ? "default" : "outline"}
+          className="h-6 min-w-10 rounded-md px-2 text-xs font-bold"
+          onClick={() => onSelect(seconds)}
+        >
+          {seconds}s
+        </Button>
+      ))}
+      {editing ? (
+        <input
+          autoFocus
+          type="number"
+          min={5}
+          max={300}
+          value={draft}
+          onChange={(event) => onDraftChange(event.target.value)}
+          onBlur={onCancel}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === "Enter") onConfirm();
+            if (event.key === "Escape") onCancel();
+          }}
+          aria-label="Custom turn length in seconds"
+          className="h-6 w-14 rounded-md border border-input bg-background px-1 text-center text-xs font-bold outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+      ) : (
+        <Button
+          type="button"
+          size="sm"
+          variant={customValue !== null && value === customValue ? "default" : "outline"}
+          className="h-6 min-w-10 rounded-md px-2 text-xs font-bold"
+          onClick={() => {
+            if (customValue !== null && value !== customValue) {
+              onSelect(customValue);
+              return;
+            }
+            onEdit();
+          }}
+          aria-label={customValue === null ? "Set custom turn length" : "Use or edit custom turn length"}
+          title={customValue === null ? "Custom time" : "Select once; tap again to edit"}
+        >
+          {customValue === null ? "✎" : `${customValue}s`}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function FairTurns() {
   const [screen, setScreen] = useState<Screen>("setup");
   const [rosterText, setRosterText] = useState("");
@@ -139,8 +218,12 @@ function FairTurns() {
   const [banner, setBanner] = useState<RoundBanner | null>(null);
 
   const [remaining, setRemaining] = useState(60);
+  const [activeTurnSeconds, setActiveTurnSeconds] = useState(60);
   const [timerRunning, setTimerRunning] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
+  const [customSeconds, setCustomSeconds] = useState<number | null>(null);
+  const [editingTime, setEditingTime] = useState(false);
+  const [customDraft, setCustomDraft] = useState("");
 
   const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
   const messageQueue = useRef<string[]>([]);
@@ -192,6 +275,7 @@ function FairTurns() {
     messageQueue.current = [COACH_MESSAGES[0], ...shuffleMessages(COACH_MESSAGES.slice(1))];
     lastCoachMessage.current = undefined;
     setRemaining(turnSeconds);
+    setActiveTurnSeconds(turnSeconds);
     setTimerRunning(false);
     setTimeUp(false);
     setScreen("class");
@@ -212,6 +296,7 @@ function FairTurns() {
       });
       if (useTimer) {
         setRemaining(turnSeconds);
+        setActiveTurnSeconds(turnSeconds);
         setTimeUp(false);
         setTimerRunning(true);
       }
@@ -283,12 +368,19 @@ function FairTurns() {
     if (!useTimer) return;
     setTimerRunning((r) => {
       if (!r && remaining === 0) {
-        setRemaining(turnSeconds);
+        setRemaining(activeTurnSeconds);
         setTimeUp(false);
       }
       return !r;
     });
-  }, [remaining, turnSeconds, useTimer]);
+  }, [activeTurnSeconds, remaining, useTimer]);
+
+  const cycleTurnSeconds = useCallback(() => {
+    const currentIndex = TIMER_PRESETS.findIndex((seconds) => seconds === turnSeconds);
+    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % TIMER_PRESETS.length;
+    setTurnSeconds(TIMER_PRESETS[nextIndex] ?? TIMER_PRESETS[0]);
+    setEditingTime(false);
+  }, [turnSeconds]);
 
   useEffect(() => {
     if (screen !== "class") return;
@@ -301,6 +393,9 @@ function FairTurns() {
       } else if (e.key.toLowerCase() === "p") {
         e.preventDefault();
         toggleTimer();
+      } else if (e.key.toLowerCase() === "t") {
+        e.preventDefault();
+        cycleTurnSeconds();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -309,7 +404,7 @@ function FairTurns() {
       window.removeEventListener("keydown", onKey);
       pipWin?.removeEventListener("keydown", onKey);
     };
-  }, [handleNext, screen, toggleTimer, pipWin]);
+  }, [cycleTurnSeconds, handleNext, screen, toggleTimer, pipWin]);
 
   // ---- float (Document Picture-in-Picture) ----
   useEffect(() => {
@@ -323,16 +418,21 @@ function FairTurns() {
   const openFloat = async () => {
     const dpip = (window as unknown as { documentPictureInPicture?: { requestWindow: (o: { width: number; height: number }) => Promise<Window> } }).documentPictureInPicture;
     if (!dpip) return;
-    const w = await dpip.requestWindow({ width: 320, height: 320 });
-    document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
-      w.document.head.appendChild(node.cloneNode(true));
-    });
-    w.document.documentElement.className = document.documentElement.className;
-    w.document.body.style.margin = "0";
-    w.document.body.style.height = "100vh";
-    w.document.body.style.display = "flex";
-    w.addEventListener("pagehide", () => setPipWin(null));
-    setPipWin(w);
+    try {
+      const w = await dpip.requestWindow({ width: 320, height: 320 });
+      document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+        w.document.head.appendChild(node.cloneNode(true));
+      });
+      w.document.documentElement.className = document.documentElement.className;
+      w.document.body.style.margin = "0";
+      w.document.body.style.height = "100vh";
+      w.document.body.style.display = "flex";
+      w.addEventListener("pagehide", () => setPipWin(null));
+      setPipWin(w);
+    } catch {
+      setPipSupported(false);
+      setCompact(true);
+    }
   };
 
   const editRoster = () => {
@@ -531,17 +631,49 @@ function FairTurns() {
 
   // ---------------- class ----------------
   const progress = students.length ? (doneCount / students.length) * 100 : 0;
-  const timeRatio = turnSeconds ? remaining / turnSeconds : 0;
+  const timeRatio = activeTurnSeconds ? remaining / activeTurnSeconds : 0;
   const timeColor =
     remaining === 0 ? "text-destructive" : timeRatio <= 0.25 ? "text-warning" : "text-foreground";
   const barColor =
     remaining === 0 ? "bg-destructive" : timeRatio <= 0.25 ? "bg-warning" : "bg-primary";
 
   const resetTimer = () => {
-    setRemaining(turnSeconds);
+    setRemaining(activeTurnSeconds);
     setTimeUp(false);
     setTimerRunning(false);
   };
+
+  const selectTurnSeconds = (seconds: number) => {
+    setTurnSeconds(seconds);
+    setEditingTime(false);
+  };
+
+  const beginCustomTime = () => {
+    setCustomDraft(String(customSeconds ?? turnSeconds));
+    setEditingTime(true);
+  };
+
+  const confirmCustomTime = () => {
+    const seconds = Math.min(300, Math.max(5, Math.round(Number(customDraft))));
+    if (!Number.isFinite(seconds)) return;
+    setCustomSeconds(seconds);
+    setTurnSeconds(seconds);
+    setEditingTime(false);
+  };
+
+  const timerLengthControls = (
+    <TimerLengthControls
+      value={turnSeconds}
+      customValue={customSeconds}
+      editing={editingTime}
+      draft={customDraft}
+      onSelect={selectTurnSeconds}
+      onEdit={beginCustomTime}
+      onDraftChange={setCustomDraft}
+      onConfirm={confirmCustomTime}
+      onCancel={() => setEditingTime(false)}
+    />
+  );
 
   const rosterPanel = (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -606,6 +738,7 @@ function FairTurns() {
               style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
             />
           </div>
+          {timerLengthControls}
         </div>
       )}
       <div className="flex items-center gap-2">
@@ -628,7 +761,7 @@ function FairTurns() {
         )}
       </div>
       <p className="text-center text-xs font-semibold text-muted-foreground">
-        Round {round} · {doneCount}/{students.length}
+        Round {round} · {doneCount}/{students.length} · {turnSeconds}s
       </p>
     </div>
   );
@@ -745,7 +878,7 @@ function FairTurns() {
             NEXT
           </Button>
           <p className="text-xs uppercase tracking-widest text-muted-foreground">
-            Space = next · P = pause / resume
+            Space = next · P = pause · T = time
           </p>
         </div>
 
@@ -761,6 +894,7 @@ function FairTurns() {
                   style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
                 />
               </div>
+              {timerLengthControls}
               {timeUp && <p className="text-lg font-bold text-destructive">Time's up</p>}
               <div className="flex justify-center gap-2">
                 <Button variant="outline" className="rounded-xl" onClick={toggleTimer}>
@@ -770,7 +904,7 @@ function FairTurns() {
                   variant="outline"
                   className="rounded-xl"
                   onClick={() => {
-                    setRemaining(turnSeconds);
+                    setRemaining(activeTurnSeconds);
                     setTimeUp(false);
                     setTimerRunning(false);
                   }}
