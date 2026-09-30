@@ -1247,19 +1247,21 @@ function FairTurns() {
         <div className="flex flex-col gap-6">
           {useTimer && (
             <div className="soft-card space-y-4 p-6 text-center">
-              <p className={`font-[family-name:var(--font-display)] text-7xl font-extrabold tabular-nums ${timeColor}`}>
-                {mmss(remaining)}
-              </p>
-              <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
-                <div
-                  className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
-                  style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
-                />
+              <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
+                <p className={`font-[family-name:var(--font-display)] text-7xl font-extrabold tabular-nums ${timeColor}`}>
+                  {mmss(remaining)}
+                </p>
+                <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
+                    style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
+                  />
+                </div>
               </div>
               {timerLengthControls}
-              {timeUp && <p className="text-lg font-bold text-destructive">Time's up</p>}
+              {!noTimer && timeUp && <p className="text-lg font-bold text-destructive">Time's up</p>}
               <div className="flex justify-center gap-2">
-                <Button variant="outline" className="rounded-xl" onClick={toggleTimer}>
+                <Button variant="outline" className="rounded-xl" onClick={toggleTimer} disabled={noTimer}>
                   {timerRunning ? "Pause" : "Resume"}
                 </Button>
                 <Button
