@@ -480,6 +480,13 @@ function FairTurns() {
         <h1 className="font-[family-name:var(--font-display)] text-4xl font-extrabold tracking-tight">
           Class summary
         </h1>
+        <section className="animate-banner-in rounded-2xl bg-primary px-6 py-5 text-center text-primary-foreground">
+          <p className="font-[family-name:var(--font-display)] text-3xl font-extrabold sm:text-4xl">
+            Great class, coach!
+          </p>
+          <p className="mt-2 text-base font-semibold">{statsLine}</p>
+          {closingMessage && <p className="mt-1 text-base font-semibold italic">{closingMessage}</p>}
+        </section>
         <section className="soft-card overflow-hidden">
           <table className="w-full text-left">
             <thead className="bg-secondary text-sm uppercase tracking-wide text-secondary-foreground">
