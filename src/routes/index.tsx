@@ -33,6 +33,7 @@ type Student = {
   total: number;
   roundsCompleted: number;
   doneThisRound: boolean;
+  skippedThisRound?: boolean;
 };
 
 type Screen = "setup" | "class" | "summary";
@@ -255,6 +256,11 @@ function FairTurns() {
   const [showRoster, setShowRoster] = useState(false);
   const [newName, setNewName] = useState("");
   const [closingMessage, setClosingMessage] = useState<string | null>(null);
+  const [skipUndo, setSkipUndo] = useState<{
+    students: Student[]; currentId: string | null; lastPicked: Student | null; remaining: number;
+    activeTurnSeconds: number; timerRunning: boolean; timeUp: boolean; round: number; banner: RoundBanner | null;
+  } | null>(null);
+  const skipUndoTimer = useRef<number | null>(null);
 
   const parsed = useMemo(() => parseNames(rosterText), [rosterText]);
   const pending = useMemo(() => students.filter((s) => !s.doneThisRound), [students]);
@@ -359,7 +365,7 @@ function FairTurns() {
       setLastPicked({ ...picked, total: picked.total + 1 });
       setStudents((prev) => {
         const next = prev.map((s) => {
-          const base = startsNewRound ? { ...s, doneThisRound: false } : s;
+          const base = startsNewRound ? { ...s, doneThisRound: false, skippedThisRound: false } : s;
           return s.id === picked.id
             ? { ...base, doneThisRound: true, total: s.total + 1, roundsCompleted: s.roundsCompleted + 1 }
             : base;
@@ -396,7 +402,7 @@ function FairTurns() {
         setBanner((currentBanner) => currentBanner ? { ...currentBanner, exiting: true } : null);
         return;
       }
-      setStudents((cur) => cur.map((s) => ({ ...s, doneThisRound: false })));
+      setStudents((cur) => cur.map((s) => ({ ...s, doneThisRound: false, skippedThisRound: false })));
       setRound((r) => r + 1);
       setBanner(null);
     }, delay);
@@ -436,6 +442,65 @@ function FairTurns() {
     commitPick(picked, startsNewRound);
   }, [banner, commitPick, students]);
 
+  const canSkip = !!current && students.some((s) => s.id === current.id && !s.skippedThisRound);
+
+  const handleSkip = useCallback(() => {
+    if (!current) return;
+    const target = students.find((s) => s.id === current.id);
+    if (!target || target.skippedThisRound) return;
+    const now = performance.now();
+    if (now - lastNextAt.current < 300) return;
+    lastNextAt.current = now;
+    setSkipUndo({ students, currentId, lastPicked, remaining, activeTurnSeconds, timerRunning, timeUp, round, banner });
+    if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
+    skipUndoTimer.current = window.setTimeout(() => {
+      setSkipUndo(null);
+      skipUndoTimer.current = null;
+    }, 5000);
+    const counted = target.doneThisRound;
+    const next = students.map((s) =>
+      s.id === target.id
+        ? {
+            ...s,
+            doneThisRound: true,
+            skippedThisRound: true,
+            total: counted ? Math.max(0, s.total - 1) : s.total,
+            roundsCompleted: counted ? Math.max(0, s.roundsCompleted - 1) : s.roundsCompleted,
+          }
+        : s,
+    );
+    const startsNewRound = !!banner;
+    const pool = startsNewRound ? next : next.filter((s) => !s.doneThisRound);
+    setStudents(next);
+    const picked = pool[Math.floor(Math.random() * pool.length)];
+    if (!picked) {
+      setCurrentId(null);
+      setTimerRunning(false);
+      return;
+    }
+    if (startsNewRound) {
+      setBanner(null);
+      setRound((r) => r + 1);
+    }
+    commitPick(picked, startsNewRound);
+  }, [activeTurnSeconds, banner, commitPick, current, currentId, lastPicked, remaining, round, students, timeUp, timerRunning]);
+
+  const undoSkip = () => {
+    if (!skipUndo) return;
+    setStudents(skipUndo.students);
+    setCurrentId(skipUndo.currentId);
+    setLastPicked(skipUndo.lastPicked);
+    setRemaining(skipUndo.remaining);
+    setActiveTurnSeconds(skipUndo.activeTurnSeconds);
+    setTimerRunning(skipUndo.timerRunning);
+    setTimeUp(skipUndo.timeUp);
+    setRound(skipUndo.round);
+    setBanner(skipUndo.banner);
+    setSkipUndo(null);
+    if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
+    skipUndoTimer.current = null;
+  };
+
   const toggleTimer = useCallback(() => {
     if (!useTimer) return;
     setTimerRunning((r) => {
@@ -462,6 +527,9 @@ function FairTurns() {
       if (e.code === "Space") {
         e.preventDefault();
         handleNext();
+      } else if (e.key.toLowerCase() === "x") {
+        e.preventDefault();
+        handleSkip();
       } else if (e.key.toLowerCase() === "p") {
         e.preventDefault();
         toggleTimer();
@@ -476,7 +544,7 @@ function FairTurns() {
       window.removeEventListener("keydown", onKey);
       pipWin?.removeEventListener("keydown", onKey);
     };
-  }, [cycleTurnSeconds, handleNext, screen, toggleTimer, pipWin]);
+  }, [cycleTurnSeconds, handleNext, handleSkip, screen, toggleTimer, pipWin]);
 
   // ---- float (Document Picture-in-Picture) ----
   useEffect(() => {
@@ -909,7 +977,9 @@ function FairTurns() {
         {students.map((s) => (
           <li key={s.id} className="flex items-center gap-2 rounded-lg bg-secondary px-2 py-1 text-sm font-semibold text-secondary-foreground">
             <span className="flex-1 truncate">{s.name}</span>
-            {s.doneThisRound && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
+            {s.skippedThisRound ? (
+              <span className="text-xs font-bold text-muted-foreground" aria-label="Didn't participate">✗</span>
+            ) : s.doneThisRound && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
             <button onClick={() => removeStudent(s.id)} aria-label={`Remove ${s.name}`} className="rounded p-0.5 hover:bg-muted">
               <X className="h-4 w-4" />
             </button>
@@ -964,6 +1034,9 @@ function FairTurns() {
         >
           NEXT
         </Button>
+        <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate">
+          ✗
+        </Button>
         {useTimer && (
           <>
             <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
@@ -975,6 +1048,9 @@ function FairTurns() {
           </>
         )}
       </div>
+      {skipUndo && (
+        <button onClick={undoSkip} className="text-center text-xs font-bold text-primary underline">Undo skip</button>
+      )}
       <p className="text-center text-xs font-semibold text-muted-foreground">
         Round {round} · {doneCount}/{students.length} · {turnSeconds}s
       </p>
@@ -1090,15 +1166,30 @@ function FairTurns() {
             </p>
           )}
 
-          <Button
-            onClick={handleNext}
-            disabled={!banner && pending.length === 0}
-            className="h-24 w-full max-w-md rounded-3xl text-4xl font-extrabold tracking-wide"
-          >
-            NEXT
-          </Button>
+          <div className="flex w-full max-w-md items-center gap-3">
+            <Button
+              onClick={handleNext}
+              disabled={!banner && pending.length === 0}
+              className="h-24 flex-1 rounded-3xl text-4xl font-extrabold tracking-wide"
+            >
+              NEXT
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleSkip}
+              disabled={!canSkip}
+              title="Didn't participate"
+              aria-label="Didn't participate"
+              className="h-24 w-24 rounded-3xl text-4xl font-extrabold"
+            >
+              ✗
+            </Button>
+          </div>
+          {skipUndo && (
+            <button onClick={undoSkip} className="text-sm font-bold text-primary underline">Undo skip</button>
+          )}
           <p className="text-xs uppercase tracking-widest text-muted-foreground">
-            Space = next · P = pause · T = time
+            Space = next · X = skip · P = pause · T = time
           </p>
         </div>
 
@@ -1148,7 +1239,7 @@ function FairTurns() {
                     key={s.id}
                     className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-base font-semibold transition-colors ${cls}`}
                   >
-                    {s.doneThisRound && !isCurrent && <span aria-hidden>✓</span>}
+                    {s.doneThisRound && !isCurrent && (s.skippedThisRound ? <span aria-label="Didn't participate" className="text-muted-foreground">✗</span> : <span aria-hidden>✓</span>)}
                     <span>{s.name}</span>
                     <span className="rounded-full bg-background/70 px-2 py-0.5 text-xs font-bold text-foreground">
                       ×{s.total}
