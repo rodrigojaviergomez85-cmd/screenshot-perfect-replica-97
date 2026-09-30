@@ -10,3 +10,4 @@
 <!-- LOVABLE:END -->
 
 - Keep round-complete coach encouragements in one in-memory constant and cycle them without repeats; this preserves easy editing and session-only behavior.
+- Keep the selected timer length separate from the active turn length so in-class changes apply only to the next pick.
