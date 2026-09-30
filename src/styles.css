@@ -110,6 +110,13 @@
   --accent-text: hsl(221.2 70% 15%);
 }
 
+:root[data-accent="red"] {
+  --accent: hsl(350 74% 40%);
+  --accent-soft: hsl(350 70% 96%);
+  --accent-tint: hsl(350 66% 90%);
+  --accent-text: hsl(350 70% 15%);
+}
+
 :root[data-accent="purple"] {
   --accent: hsl(272.1 71.7% 47.1%);
   --accent-soft: hsl(272.1 65% 96%);
@@ -124,18 +131,11 @@
   --accent-text: hsl(17.5 72% 15%);
 }
 
-:root[data-accent="teal"] {
-  --accent: hsl(175.3 77.4% 26.1%);
-  --accent-soft: hsl(175.3 55% 96%);
-  --accent-tint: hsl(175.3 50% 90%);
-  --accent-text: hsl(175.3 65% 15%);
-}
-
-:root[data-accent="pink"] {
-  --accent: hsl(335.1 77.6% 38%);
-  --accent-soft: hsl(335.1 68% 96%);
-  --accent-tint: hsl(335.1 62% 90%);
-  --accent-text: hsl(335.1 68% 15%);
+:root[data-accent="yellow"] {
+  --accent: hsl(45 100% 27%);
+  --accent-soft: hsl(45 85% 96%);
+  --accent-tint: hsl(45 78% 90%);
+  --accent-text: hsl(45 85% 15%);
 }
 
 .dark {
@@ -205,6 +205,14 @@
   background-color: hsl(150.8 82.6% 33.7%);
 }
 
+@utility bg-swatch-red {
+  background-color: hsl(350 74% 40%);
+}
+
+@utility bg-swatch-yellow {
+  background-color: hsl(45 100% 27%);
+}
+
 @utility bg-swatch-blue {
   background-color: hsl(221.2 83.2% 53.3%);
 }
@@ -215,14 +223,6 @@
 
 @utility bg-swatch-orange {
   background-color: hsl(17.5 88.3% 36%);
-}
-
-@utility bg-swatch-teal {
-  background-color: hsl(175.3 77.4% 26.1%);
-}
-
-@utility bg-swatch-pink {
-  background-color: hsl(335.1 77.6% 38%);
 }
 
 @keyframes pop-in {

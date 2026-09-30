@@ -61,12 +61,12 @@ const COACH_MESSAGES = [
 
 const TIMER_PRESETS = [10, 15, 30, 60] as const;
 const ACCENT_OPTIONS = [
+  { id: "red", label: "Red", swatch: "bg-swatch-red" },
+  { id: "orange", label: "Orange", swatch: "bg-swatch-orange" },
+  { id: "yellow", label: "Yellow", swatch: "bg-swatch-yellow" },
   { id: "green", label: "Green", swatch: "bg-swatch-green" },
   { id: "blue", label: "Blue", swatch: "bg-swatch-blue" },
   { id: "purple", label: "Purple", swatch: "bg-swatch-purple" },
-  { id: "orange", label: "Orange", swatch: "bg-swatch-orange" },
-  { id: "teal", label: "Teal", swatch: "bg-swatch-teal" },
-  { id: "pink", label: "Pink", swatch: "bg-swatch-pink" },
 ] as const;
 type AccentColor = (typeof ACCENT_OPTIONS)[number]["id"];
 
