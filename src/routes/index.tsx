@@ -1062,7 +1062,7 @@ function FairTurns() {
           <span className={diff <= 1 ? "text-primary" : "text-destructive"}>{diff}</span>
         </p>
         <div className="flex flex-wrap gap-3">
-          <Button size="lg" className="h-14 rounded-2xl px-8 text-lg font-bold" onClick={resetAll}>
+          <Button size="lg" className="h-14 rounded-2xl px-8 text-lg font-bold" onClick={() => resetAll()}>
             Start new class
           </Button>
           <Button
