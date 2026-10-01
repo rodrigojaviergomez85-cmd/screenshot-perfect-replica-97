@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, ChevronDown, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -361,6 +361,7 @@ function FairTurns() {
   const [compact, setCompact] = useState(false);
   const [lastPicked, setLastPicked] = useState<Student | null>(null);
   const [showRoster, setShowRoster] = useState(false);
+  const [miniView, setMiniView] = useState<"controls" | "tally">("controls");
   const [newName, setNewName] = useState("");
   const [closingMessage, setClosingMessage] = useState<string | null>(null);
   const [skipUndo, setSkipUndo] = useState<{
@@ -1491,9 +1492,53 @@ function FairTurns() {
     </div>
   );
 
-  const mini = (
+  const activeClassName = classes.find((c) => c.id === activeClassId)?.name ?? "Fair Turns";
+
+  const tallyView = (
+    <div className="flex h-full min-h-0 w-full flex-col gap-2 bg-background p-2 text-foreground">
+      <div className="flex shrink-0 items-center gap-2">
+        <Button size="sm" variant="outline" className="h-8 shrink-0 rounded-lg px-2 text-xs font-bold" onClick={() => setMiniView("controls")}>
+          <ChevronLeft className="h-4 w-4" /> Controls
+        </Button>
+        <p className="min-w-0 flex-1 truncate text-right text-sm font-extrabold">{activeClassName}</p>
+      </div>
+      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-1" aria-label="Tally marks today">
+        {students.map((s) => {
+          const absent = isAbsent(s);
+          const isCur = s.id === currentId;
+          return (
+            <li key={s.id} className={`grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card"} ${absent ? "opacity-50" : ""}`}>
+              <span className="flex min-w-0 items-center gap-1">
+                <span className={`truncate font-bold ${absent ? "line-through" : ""}`} title={s.name}>{s.name}</span>
+                {absent && <span className="shrink-0 text-[10px] font-semibold">absent</span>}
+                {s.afWeek === week && <span className="shrink-0 text-[10px] font-bold">AF ✓</span>}
+              </span>
+              <span className="flex min-h-4 min-w-0">
+                <Tally count={s.total} className="flex-wrap gap-y-1" />
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-9 flex-1 rounded-xl text-base font-extrabold">
+          NEXT
+        </Button>
+        {!noTimer && (useTimer || afMode) && (
+          <Button variant="outline" className="h-9 rounded-xl px-2 text-xs font-bold tabular-nums" onClick={toggleTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
+            {timerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />} {mmss(remaining)}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
+  const mini = miniView === "tally" ? tallyView : (
     <div className="relative flex h-full min-h-0 w-full flex-col justify-between gap-2 bg-background p-3 text-foreground">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-2">
+        <Button size="sm" className="h-8 rounded-lg px-3 text-xs font-bold" onClick={() => setMiniView("tally")}>
+          Tally marks
+        </Button>
         <button
           onClick={() => setShowRoster((v) => !v)}
           className="z-10 flex items-center gap-1 rounded-lg bg-secondary px-2 py-0.5 text-xs font-bold text-secondary-foreground"
@@ -1566,13 +1611,13 @@ function FairTurns() {
 
   if (compact && !pipSupported) {
     return (
-      <main className="flex min-h-screen flex-col">
+      <main className="flex h-dvh flex-col overflow-hidden">
         <div className="flex justify-end p-2">
           <Button variant="ghost" size="sm" onClick={() => setCompact(false)}>
             <Maximize2 className="mr-1 h-4 w-4" /> Full view
           </Button>
         </div>
-        <div className="flex-1">{mini}</div>
+        <div className="min-h-0 flex-1">{mini}</div>
       </main>
     );
   }
