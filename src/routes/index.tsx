@@ -419,11 +419,11 @@ function FairTurns() {
 
   // Keep the active class entry in sync with live progress.
   useEffect(() => {
-    if (!activeClassId) return;
+    if (!activeClassId || screen === "home") return;
     setClasses((prev) =>
       prev.map((c) => (c.id === activeClassId ? { ...c, students, round, day: classDay, updatedAt: Date.now() } : c)),
     );
-  }, [activeClassId, classDay, round, students]);
+  }, [activeClassId, classDay, round, screen, students]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
