@@ -11,4 +11,4 @@
 
 - Keep round-complete coach encouragements in one in-memory constant and cycle them without repeats; this preserves easy editing and session-only behavior.
 - Keep the selected timer length separate from the active turn length so in-class changes apply only to the next pick.
-- Persist the class (roster, tallies, round) in localStorage under one key with the local date; reset tallies and rounds (keeping names) when the local day changes, keep no history of past days, and delete only via the confirmed "Clear saved class" action.
+- Persist multiple classes in localStorage under one key (each with unique id, name, roster, tallies, round, and local date) plus the last-used id; sync only the active class, reset a class's tallies and rounds (keeping names) when opened on a new local day, keep no history of past days, and delete only via confirmed per-class Delete.
