@@ -35,6 +35,10 @@ type Student = {
   roundsCompleted: number;
   doneThisRound: boolean;
   skippedThisRound?: boolean;
+  /** Week key (Monday date) when the student did Automatic Fluency. */
+  afWeek?: string;
+  /** Local day the student was marked absent. */
+  absentDay?: string;
 };
 
 type Screen = "home" | "setup" | "class" | "summary";
@@ -51,6 +55,8 @@ function normalizeStudents(raw: unknown): Student[] {
     .map((s) => ({
       id: s.id, name: s.name, total: Number(s.total) || 0, roundsCompleted: Number(s.roundsCompleted) || 0,
       doneThisRound: !!s.doneThisRound, skippedThisRound: !!s.skippedThisRound,
+      afWeek: typeof s.afWeek === "string" && s.afWeek === weekKey() ? s.afWeek : undefined,
+      absentDay: typeof s.absentDay === "string" && s.absentDay === localDay() ? s.absentDay : undefined,
     }));
 }
 
@@ -70,6 +76,25 @@ function localDay(date = new Date()) {
   const d = String(date.getDate()).padStart(2, "0");
   return `${date.getFullYear()}-${m}-${d}`;
 }
+
+/** Calendar week key: local date of that week's Monday. */
+function weekKey(date = new Date()) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return localDay(d);
+}
+
+function shuffled<T>(list: T[]): T[] {
+  const a = [...list];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = a[i]!; a[i] = a[j]!; a[j] = t;
+  }
+  return a;
+}
+
+const AF_COUNT_KEY = "fair-turns-af-count";
+const AF_SECONDS_KEY = "fair-turns-af-seconds";
 
 function resetDay(list: Student[]): Student[] {
   return list.map((s) => ({ ...s, total: 0, roundsCompleted: 0, doneThisRound: false, skippedThisRound: false }));
@@ -316,6 +341,14 @@ function FairTurns() {
   const [activeClassId, setActiveClassId] = useState<string | null>(null);
   const [newClassName, setNewClassName] = useState("");
   const [setupMode, setSetupMode] = useState<"new" | "edit">("new");
+  const [week, setWeek] = useState(() => weekKey());
+  const [afMode, setAfMode] = useState(false);
+  const [afCount, setAfCount] = useState<2 | 3>(2);
+  const [afSeconds, setAfSeconds] = useState(120);
+  const [afQueue, setAfQueue] = useState<string[]>([]);
+  const [afIndex, setAfIndex] = useState(-1);
+  const [afSkipped, setAfSkipped] = useState<string[]>([]);
+  const afPrevWeek = useRef(new Map<string, string | undefined>());
 
   const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
   const messageQueue = useRef<string[]>([]);
@@ -331,6 +364,7 @@ function FairTurns() {
   const [skipUndo, setSkipUndo] = useState<{
     students: Student[]; currentId: string | null; lastPicked: Student | null; remaining: number;
     activeTurnSeconds: number; timerRunning: boolean; timeUp: boolean; round: number; banner: RoundBanner | null;
+    af?: { queue: string[]; index: number; skipped: string[] };
   } | null>(null);
   const skipUndoTimer = useRef<number | null>(null);
   const bannerShownForRound = useRef<number | null>(null);
@@ -341,8 +375,10 @@ function FairTurns() {
   };
 
   const parsed = useMemo(() => parseNames(rosterText), [rosterText]);
-  const pending = useMemo(() => students.filter((s) => !s.doneThisRound), [students]);
-  const doneCount = students.length - pending.length;
+  const isAbsent = (s: Student) => s.absentDay === classDay;
+  const presentStudents = students.filter((s) => !isAbsent(s));
+  const pending = presentStudents.filter((s) => !s.doneThisRound);
+  const doneCount = presentStudents.length - pending.length;
   const current = students.find((s) => s.id === currentId) ?? (currentId ? lastPicked : null);
   const activeMessages = useMemo(() => {
     return coachMessages.map((message) => message.trim()).filter(Boolean);
@@ -377,6 +413,10 @@ function FairTurns() {
           setActiveTurnSeconds(seconds);
         }
       }
+      const savedAfCount = window.localStorage.getItem(AF_COUNT_KEY);
+      if (savedAfCount === "3") setAfCount(3);
+      const savedAfSeconds = Number(window.localStorage.getItem(AF_SECONDS_KEY));
+      if (Number.isInteger(savedAfSeconds) && savedAfSeconds >= 30 && savedAfSeconds <= 600) setAfSeconds(savedAfSeconds);
       const savedClasses = window.localStorage.getItem(CLASSES_STORAGE_KEY);
       let loaded: SavedClass[] = [];
       let lastId: string | null = null;
@@ -412,10 +452,12 @@ function FairTurns() {
       window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(coachMessages));
       window.localStorage.setItem(SHOW_MESSAGES_STORAGE_KEY, String(showCoachMessages));
       window.localStorage.setItem(TIMER_STORAGE_KEY, String(turnSeconds));
+      window.localStorage.setItem(AF_COUNT_KEY, String(afCount));
+      window.localStorage.setItem(AF_SECONDS_KEY, String(afSeconds));
     } catch {
       /* The app remains fully usable when browser storage is unavailable. */
     }
-  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, turnSeconds]);
+  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, turnSeconds, afCount, afSeconds]);
 
   // Keep the active class entry in sync with live progress.
   useEffect(() => {
@@ -437,6 +479,13 @@ function FairTurns() {
   // ---- day rollover (also when the tab stays open overnight) ----
   useEffect(() => {
     const check = () => {
+      const thisWeek = weekKey();
+      if (thisWeek !== week) {
+        setWeek(thisWeek);
+        setStudents((prev) => prev.map((s) => ({ ...s, afWeek: undefined })));
+        setClasses((prev) => prev.map((c) => ({ ...c, students: c.students.map((s) => ({ ...s, afWeek: undefined })) })));
+        setAfQueue([]); setAfIndex(-1); setAfSkipped([]);
+      }
       const today = localDay();
       if (today === classDay) return;
       setClassDay(today);
@@ -448,6 +497,7 @@ function FairTurns() {
       bannerShownForRound.current = null;
       setTimerRunning(false);
       setSkipUndo(null);
+      setAfQueue([]); setAfIndex(-1); setAfSkipped([]);
     };
     const id = window.setInterval(check, 30000);
     document.addEventListener("visibilitychange", check);
@@ -455,7 +505,7 @@ function FairTurns() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", check);
     };
-  }, [classDay]);
+  }, [classDay, week]);
 
   useEffect(() => () => {
     if (undoMessageTimer.current !== null) window.clearTimeout(undoMessageTimer.current);
@@ -488,6 +538,8 @@ function FairTurns() {
     setStudents(list);
     setRound(classRound);
     setClassDay(localDay());
+    setWeek(weekKey());
+    setAfMode(false); setAfQueue([]); setAfIndex(-1); setAfSkipped([]);
     setCurrentId(null);
     setLastPicked(null);
     setBanner(null);
@@ -516,7 +568,7 @@ function FairTurns() {
   const openClass = (c: SavedClass) => {
     const sameDay = c.day === localDay();
     setActiveClassId(c.id);
-    enterClass(sameDay ? c.students : resetDay(c.students), sameDay ? c.round : 1);
+    enterClass(normalizeStudents(sameDay ? c.students : resetDay(c.students)), sameDay ? c.round : 1);
   };
 
   const goHome = () => {
@@ -578,7 +630,7 @@ function FairTurns() {
     [turnSeconds, useTimer],
   );
 
-  const roundComplete = students.length > 0 && students.every((s) => s.doneThisRound);
+  const roundComplete = presentStudents.length > 0 && presentStudents.every((s) => s.doneThisRound);
 
   // Show the round-complete banner once per completed round. The banner never changes round data.
   useEffect(() => {
@@ -631,8 +683,9 @@ function FairTurns() {
 
   /** Shared pick rule for NEXT and Skip: no repeats in a round; first pick of a new round avoids the last picked. */
   const choosePick = (list: Student[], newRound: boolean, lastId: string | null): Student | null => {
-    let pool = newRound ? list : list.filter((s) => !s.doneThisRound);
-    if (newRound && list.length >= 2 && lastId) {
+    const present = list.filter((s) => s.absentDay !== classDay);
+    let pool = newRound ? present : present.filter((s) => !s.doneThisRound);
+    if (newRound && present.length >= 2 && lastId) {
       const filtered = pool.filter((s) => s.id !== lastId);
       if (filtered.length > 0) pool = filtered;
     }
@@ -640,11 +693,96 @@ function FairTurns() {
     return pool[Math.floor(Math.random() * pool.length)] ?? null;
   };
 
+  const startAfTimer = () => {
+    setRemaining(afSeconds);
+    setActiveTurnSeconds(afSeconds);
+    setTimeUp(false);
+    setTimerRunning(true);
+  };
+
+  const showAfPick = (list: Student[], id: string) => {
+    const picked = list.find((s) => s.id === id);
+    if (!picked) return;
+    afPrevWeek.current.set(id, picked.afWeek);
+    setCurrentId(id);
+    setLastPicked({ ...picked, total: picked.total + 1, afWeek: week });
+    setStudents(list.map((s) => (s.id === id ? { ...s, total: s.total + 1, afWeek: week } : s)));
+    startAfTimer();
+  };
+
+  /** Automatic Fluency: weekly-fair picks (not-yet-AF first), no repeats within a session. */
+  const afNext = () => {
+    const now = performance.now();
+    if (now - lastNextAt.current < 300) return;
+    let queue = afQueue;
+    let index = afIndex + 1;
+    let skipped = afSkipped;
+    if (index >= queue.length) {
+      const present = students.filter((s) => s.absentDay !== classDay);
+      const fresh = shuffled(present.filter((s) => s.afWeek !== week));
+      const repeat = shuffled(present.filter((s) => s.afWeek === week));
+      queue = [...fresh, ...repeat].slice(0, afCount).map((s) => s.id);
+      index = 0;
+      skipped = [];
+      if (queue.length === 0) return;
+    }
+    lastNextAt.current = now;
+    clearSkipUndo();
+    setAfQueue(queue); setAfIndex(index); setAfSkipped(skipped);
+    showAfPick(students, queue[index]!);
+  };
+
+  const afSkip = () => {
+    if (!current || afQueue[afIndex] !== current.id || afSkipped.includes(current.id)) return;
+    const now = performance.now();
+    if (now - lastNextAt.current < 300) return;
+    lastNextAt.current = now;
+    setSkipUndo({ students, currentId, lastPicked, remaining, activeTurnSeconds, timerRunning, timeUp, round, banner,
+      af: { queue: afQueue, index: afIndex, skipped: afSkipped } });
+    if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
+    skipUndoTimer.current = window.setTimeout(() => { setSkipUndo(null); skipUndoTimer.current = null; }, 5000);
+    const id = current.id;
+    const next = students.map((s) =>
+      s.id === id ? { ...s, total: Math.max(0, s.total - 1), afWeek: afPrevWeek.current.get(id) } : s,
+    );
+    setAfSkipped([...afSkipped, id]);
+    const nextIndex = afIndex + 1;
+    if (nextIndex < afQueue.length) {
+      setAfIndex(nextIndex);
+      showAfPick(next, afQueue[nextIndex]!);
+    } else {
+      setAfIndex(nextIndex);
+      setStudents(next);
+      setCurrentId(null);
+      setTimerRunning(false);
+      setTimeUp(false);
+    }
+  };
+
+  const switchMode = (af: boolean) => {
+    if (af === afMode) return;
+    clearSkipUndo();
+    setAfMode(af);
+    setAfQueue([]); setAfIndex(-1); setAfSkipped([]);
+    setCurrentId(null);
+    setTimerRunning(false);
+    setTimeUp(false);
+    const seconds = af ? afSeconds : turnSeconds;
+    setRemaining(seconds);
+    setActiveTurnSeconds(seconds);
+  };
+
+  const toggleAbsent = (id: string) => {
+    clearSkipUndo();
+    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, absentDay: s.absentDay === classDay ? undefined : classDay } : s)));
+  };
+
   const handleNext = useCallback(() => {
+    if (afMode) { afNext(); return; }
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     if (students.length === 0) return;
-    const startsNewRound = students.every((s) => s.doneThisRound);
+    const startsNewRound = presentStudents.every((s) => s.doneThisRound);
     const picked = choosePick(students, startsNewRound, lastPicked?.id ?? null);
     if (!picked) return;
     lastNextAt.current = now;
@@ -655,11 +793,14 @@ function FairTurns() {
     }
     commitPick(picked, startsNewRound);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commitPick, lastPicked, students]);
+  });
 
-  const canSkip = !!current && students.some((s) => s.id === current.id && !s.skippedThisRound);
+  const canSkip = afMode
+    ? !!current && afQueue[afIndex] === current.id && !afSkipped.includes(current.id)
+    : !!current && students.some((s) => s.id === current.id && !s.skippedThisRound);
 
   const handleSkip = useCallback(() => {
+    if (afMode) { afSkip(); return; }
     if (!current) return;
     const target = students.find((s) => s.id === current.id);
     if (!target || target.skippedThisRound) return;
@@ -695,7 +836,7 @@ function FairTurns() {
     }
     commitPick(picked, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTurnSeconds, banner, commitPick, current, currentId, lastPicked, remaining, round, students, timeUp, timerRunning]);
+  });
 
   const undoSkip = () => {
     if (!skipUndo) return;
@@ -708,12 +849,15 @@ function FairTurns() {
     setTimeUp(skipUndo.timeUp);
     setRound(skipUndo.round);
     setBanner(skipUndo.banner);
+    if (skipUndo.af) {
+      setAfQueue(skipUndo.af.queue); setAfIndex(skipUndo.af.index); setAfSkipped(skipUndo.af.skipped);
+    }
     if (!skipUndo.students.every((s) => s.doneThisRound)) bannerShownForRound.current = null;
     clearSkipUndo();
   };
 
   const toggleTimer = useCallback(() => {
-    if (!useTimer || turnSeconds === 0) return;
+    if (!useTimer || (!afMode && turnSeconds === 0)) return;
     setTimerRunning((r) => {
       if (!r && remaining === 0) {
         setRemaining(activeTurnSeconds);
@@ -1204,8 +1348,8 @@ function FairTurns() {
   }
 
   // ---------------- class ----------------
-  const progress = students.length ? (doneCount / students.length) * 100 : 0;
-  const noTimer = turnSeconds === 0;
+  const progress = presentStudents.length ? (doneCount / presentStudents.length) * 100 : 0;
+  const noTimer = !afMode && turnSeconds === 0;
   const timeRatio = activeTurnSeconds ? remaining / activeTurnSeconds : 0;
   const timeColor =
     remaining === 0 ? "text-destructive" : timeRatio <= 0.25 ? "text-warning" : "text-accent-foreground";
@@ -1214,8 +1358,9 @@ function FairTurns() {
 
   const resetTimer = () => {
     if (noTimer) return;
-    setRemaining(turnSeconds);
-    setActiveTurnSeconds(turnSeconds);
+    const seconds = afMode ? afSeconds : turnSeconds;
+    setRemaining(seconds);
+    setActiveTurnSeconds(seconds);
     setTimeUp(false);
     setTimerRunning(true);
   };
@@ -1250,6 +1395,36 @@ function FairTurns() {
     />
   );
 
+  const modeControls = (
+    <div className="flex flex-wrap items-center justify-center gap-1 text-xs">
+      <Button size="sm" variant={afMode ? "outline" : "default"} className="h-6 rounded-md px-2 text-xs font-bold" onClick={() => switchMode(false)}>Normal</Button>
+      <Button size="sm" variant={afMode ? "default" : "outline"} className="h-6 rounded-md px-2 text-xs font-bold" onClick={() => switchMode(true)} title="Automatic Fluency">Automatic Fluency</Button>
+      {afMode && (
+        <>
+          {([2, 3] as const).map((n) => (
+            <Button key={n} size="sm" variant={afCount === n ? "default" : "outline"} className="h-6 min-w-8 rounded-md px-2 text-xs font-bold"
+              onClick={() => { setAfCount(n); setAfQueue([]); setAfIndex(-1); setAfSkipped([]); }} aria-label={`${n} students`}>
+              {n}
+            </Button>
+          ))}
+          <label className="flex items-center gap-1 font-semibold text-muted-foreground">
+            <input type="number" min={30} max={600} value={afSeconds}
+              onKeyDown={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                const v = Math.round(Number(e.target.value));
+                if (Number.isFinite(v)) setAfSeconds(Math.min(600, Math.max(30, v)));
+              }}
+              className="h-6 w-14 rounded-md border border-input bg-background px-1 text-xs text-foreground" aria-label="Automatic Fluency seconds" />s
+          </label>
+        </>
+      )}
+    </div>
+  );
+
+  const afProgress = afMode
+    ? `AF ${Math.min(afIndex + 1, afQueue.length)}/${afQueue.length || afCount} · ${afSeconds}s`
+    : null;
+
   const rosterPanel = (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex gap-1">
@@ -1268,7 +1443,9 @@ function FairTurns() {
       <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto">
         {students.map((s) => (
           <li key={s.id} className="flex items-center gap-2 rounded-lg bg-secondary px-2 py-1 text-sm font-semibold text-secondary-foreground">
-            <span className="truncate">{s.name}</span>
+            <button onClick={() => toggleAbsent(s.id)} title={isAbsent(s) ? "Mark present today" : "Mark absent today"}
+              className={`truncate text-left ${isAbsent(s) ? "line-through opacity-50" : ""}`}>{s.name}</button>
+            {s.afWeek === week && <span className="text-[10px] font-bold text-primary">AF ✓</span>}
             <Tally count={s.total} className="flex-1 text-foreground/70" />
             {s.skippedThisRound ? (
               <span className="text-xs font-bold text-muted-foreground" aria-label="Didn't participate">✗</span>
@@ -1318,13 +1495,14 @@ function FairTurns() {
               />
             </div>
           </div>
-          {timerLengthControls}
+          {!afMode && timerLengthControls}
         </div>
       )}
+      {modeControls}
       <div className="flex items-center gap-2">
         <Button
           onClick={handleNext}
-          disabled={students.length === 0}
+          disabled={presentStudents.length === 0}
           className="h-12 flex-1 rounded-2xl text-xl font-extrabold tracking-wide"
         >
           NEXT
@@ -1347,7 +1525,7 @@ function FairTurns() {
         <button onClick={undoSkip} className="text-center text-xs font-bold text-primary underline">Undo skip</button>
       )}
       <p className="text-center text-xs font-semibold text-muted-foreground">
-        Round {round} · {doneCount}/{students.length} · {noTimer ? "no timer" : `${turnSeconds}s`}
+        {afProgress ?? `Round ${round} · ${doneCount}/${presentStudents.length} · ${noTimer ? "no timer" : `${turnSeconds}s`}`}
       </p>
     </div>
   );
@@ -1434,7 +1612,7 @@ function FairTurns() {
       <div className="space-y-2">
         <div className="flex justify-between text-sm font-semibold text-muted-foreground">
           <span>
-            {doneCount} / {students.length} participated
+            {doneCount} / {presentStudents.length} participated
           </span>
           <span>{pending.length} pending this round</span>
         </div>
@@ -1476,7 +1654,7 @@ function FairTurns() {
           <div className="flex w-full max-w-md items-center gap-3">
             <Button
               onClick={handleNext}
-              disabled={students.length === 0}
+              disabled={presentStudents.length === 0}
               className="h-24 flex-1 rounded-3xl text-4xl font-extrabold tracking-wide"
             >
               NEXT
@@ -1514,7 +1692,9 @@ function FairTurns() {
                   />
                 </div>
               </div>
-              {timerLengthControls}
+              {modeControls}
+              {afProgress && <p className="text-sm font-bold text-primary">{afProgress}</p>}
+              {!afMode && timerLengthControls}
               {!noTimer && timeUp && <p className="text-lg font-bold text-destructive">Time's up</p>}
               <div className="flex justify-center gap-2">
                 <Button variant="outline" className="rounded-xl" onClick={toggleTimer} disabled={noTimer}>
@@ -1540,6 +1720,8 @@ function FairTurns() {
                 const isCurrent = s.id === currentId;
                 const cls = isCurrent
                   ? "bg-primary text-primary-foreground"
+                  : isAbsent(s)
+                    ? "bg-muted text-muted-foreground line-through opacity-50"
                   : s.doneThisRound
                     ? "bg-muted text-muted-foreground"
                     : "bg-secondary text-secondary-foreground";
@@ -1549,7 +1731,8 @@ function FairTurns() {
                     className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-base font-semibold transition-colors ${cls}`}
                   >
                     {s.doneThisRound && !isCurrent && (s.skippedThisRound ? <span aria-label="Didn't participate" className="text-muted-foreground">✗</span> : <span aria-hidden>✓</span>)}
-                    <span>{s.name}</span>
+                    <button onClick={() => toggleAbsent(s.id)} title={isAbsent(s) ? "Absent today — tap to mark present" : "Tap to mark absent today"}>{s.name}</button>
+                    {s.afWeek === week && <span className="text-xs font-bold">AF ✓</span>}
                     <Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-foreground/70"} />
                   </li>
                 );
