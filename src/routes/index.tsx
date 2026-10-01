@@ -1611,13 +1611,13 @@ function FairTurns() {
 
   if (compact && !pipSupported) {
     return (
-      <main className="flex min-h-screen flex-col">
+      <main className="flex h-dvh flex-col overflow-hidden">
         <div className="flex justify-end p-2">
           <Button variant="ghost" size="sm" onClick={() => setCompact(false)}>
             <Maximize2 className="mr-1 h-4 w-4" /> Full view
           </Button>
         </div>
-        <div className="flex-1">{mini}</div>
+        <div className="min-h-0 flex-1">{mini}</div>
       </main>
     );
   }
