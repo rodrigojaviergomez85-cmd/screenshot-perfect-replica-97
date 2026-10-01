@@ -36,9 +36,9 @@ type Student = {
   doneThisRound: boolean;
   skippedThisRound?: boolean;
   /** Week key (Monday date) when the student did Automatic Fluency. */
-  afWeek?: string;
+  afWeek?: string | undefined;
   /** Local day the student was marked absent. */
-  absentDay?: string;
+  absentDay?: string | undefined;
 };
 
 type Screen = "home" | "setup" | "class" | "summary";
