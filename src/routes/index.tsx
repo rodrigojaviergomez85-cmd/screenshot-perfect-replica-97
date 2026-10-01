@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, ChevronDown, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -1492,7 +1492,7 @@ function FairTurns() {
     </div>
   );
 
-  const className = classes.find((c) => c.id === activeClassId)?.name ?? "Fair Turns";
+  const activeClassName = classes.find((c) => c.id === activeClassId)?.name ?? "Fair Turns";
 
   const tallyView = (
     <div className="flex h-full min-h-0 w-full flex-col gap-2 bg-background p-2 text-foreground">
@@ -1500,7 +1500,7 @@ function FairTurns() {
         <Button size="sm" variant="outline" className="h-8 shrink-0 rounded-lg px-2 text-xs font-bold" onClick={() => setMiniView("controls")}>
           <ChevronLeft className="h-4 w-4" /> Controls
         </Button>
-        <p className="min-w-0 flex-1 truncate text-right text-sm font-extrabold">{className}</p>
+        <p className="min-w-0 flex-1 truncate text-right text-sm font-extrabold">{activeClassName}</p>
       </div>
       <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-1" aria-label="Tally marks today">
         {students.map((s) => {
