@@ -38,6 +38,36 @@ type Student = {
 
 type Screen = "setup" | "class" | "summary";
 
+const CLASS_STORAGE_KEY = "fair-turns-class";
+
+function localDay(date = new Date()) {
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${m}-${d}`;
+}
+
+function resetDay(list: Student[]): Student[] {
+  return list.map((s) => ({ ...s, total: 0, roundsCompleted: 0, doneThisRound: false, skippedThisRound: false }));
+}
+
+function Tally({ count, className = "" }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+  const groups: number[] = [];
+  for (let left = count; left > 0; left -= 5) groups.push(Math.min(5, left));
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${className}`} role="img" aria-label={`${count} participations today`}>
+      {groups.map((n, gi) => (
+        <svg key={gi} width={n === 5 ? 22 : 4 + (n - 1) * 5} height="16" viewBox={`0 0 ${n === 5 ? 22 : 4 + (n - 1) * 5} 16`} aria-hidden className="shrink-0">
+          {Array.from({ length: Math.min(n, 4) }, (_, i) => (
+            <line key={i} x1={2 + i * 5} y1="1" x2={2 + i * 5} y2="15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          ))}
+          {n === 5 && <line x1="0" y1="13" x2="21" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />}
+        </svg>
+      ))}
+    </span>
+  );
+}
+
 type RoundBanner = {
   round: number;
   message: string;
@@ -256,6 +286,7 @@ function FairTurns() {
   const [deletedCoachMessage, setDeletedCoachMessage] = useState<{ message: string; index: number } | null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [classDay, setClassDay] = useState(() => localDay());
 
   const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
   const messageQueue = useRef<string[]>([]);
@@ -313,6 +344,27 @@ function FairTurns() {
         const seconds = Number(savedTime);
         if (Number.isInteger(seconds) && (seconds === 0 || (seconds >= 5 && seconds <= 300))) {
           setTurnSeconds(seconds);
+          setRemaining(seconds);
+          setActiveTurnSeconds(seconds);
+        }
+      }
+      const savedClass = window.localStorage.getItem(CLASS_STORAGE_KEY);
+      if (savedClass) {
+        const data = JSON.parse(savedClass) as { day?: string; round?: number; students?: Student[] };
+        const list = Array.isArray(data.students)
+          ? data.students.filter((s) => s && typeof s.id === "string" && typeof s.name === "string").map((s) => ({
+              id: s.id, name: s.name, total: Number(s.total) || 0, roundsCompleted: Number(s.roundsCompleted) || 0,
+              doneThisRound: !!s.doneThisRound, skippedThisRound: !!s.skippedThisRound,
+            }))
+          : [];
+        if (list.length > 0) {
+          const today = localDay();
+          const sameDay = data.day === today;
+          setStudents(sameDay ? list : resetDay(list));
+          setRound(sameDay && Number.isInteger(data.round) && (data.round ?? 0) > 0 ? data.round! : 1);
+          setClassDay(today);
+          setTimerRunning(false);
+          setScreen("class");
         }
       }
     } catch {
@@ -333,6 +385,39 @@ function FairTurns() {
       /* The app remains fully usable when browser storage is unavailable. */
     }
   }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, turnSeconds]);
+
+  useEffect(() => {
+    if (!preferencesLoaded) return;
+    try {
+      if (students.length === 0) window.localStorage.removeItem(CLASS_STORAGE_KEY);
+      else window.localStorage.setItem(CLASS_STORAGE_KEY, JSON.stringify({ day: classDay, round, students }));
+    } catch {
+      /* Storage unavailable: the class still works for this session. */
+    }
+  }, [classDay, preferencesLoaded, round, students]);
+
+  // ---- day rollover (also when the tab stays open overnight) ----
+  useEffect(() => {
+    const check = () => {
+      const today = localDay();
+      if (today === classDay) return;
+      setClassDay(today);
+      setStudents((prev) => resetDay(prev));
+      setRound(1);
+      setCurrentId(null);
+      setLastPicked(null);
+      setBanner(null);
+      bannerShownForRound.current = null;
+      setTimerRunning(false);
+      setSkipUndo(null);
+    };
+    const id = window.setInterval(check, 30000);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [classDay]);
 
   useEffect(() => () => {
     if (undoMessageTimer.current !== null) window.clearTimeout(undoMessageTimer.current);
@@ -372,6 +457,7 @@ function FairTurns() {
       })),
     );
     setRound(1);
+    setClassDay(localDay());
     setCurrentId(null);
     setLastPicked(null);
     setBanner(null);
@@ -674,6 +760,17 @@ function FairTurns() {
     bannerShownForRound.current = null;
     setClosingMessage(null);
     setScreen("setup");
+  };
+
+  const clearSavedClass = () => {
+    if (!window.confirm("Delete the saved class? This removes all student names and today's tallies from this browser.")) return;
+    setTimerRunning(false);
+    try {
+      window.localStorage.removeItem(CLASS_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+    resetAll();
   };
 
   const updateCoachMessage = (index: number, value: string) => {
@@ -1046,7 +1143,8 @@ function FairTurns() {
       <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto">
         {students.map((s) => (
           <li key={s.id} className="flex items-center gap-2 rounded-lg bg-secondary px-2 py-1 text-sm font-semibold text-secondary-foreground">
-            <span className="flex-1 truncate">{s.name}</span>
+            <span className="truncate">{s.name}</span>
+            <Tally count={s.total} className="flex-1 text-foreground/70" />
             {s.skippedThisRound ? (
               <span className="text-xs font-bold text-muted-foreground" aria-label="Didn't participate">✗</span>
             ) : s.doneThisRound && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
@@ -1202,6 +1300,9 @@ function FairTurns() {
           >
             End class
           </Button>
+          <Button variant="ghost" size="sm" className="rounded-xl text-muted-foreground" onClick={clearSavedClass}>
+            Clear saved class
+          </Button>
         </div>
       </header>
 
@@ -1324,9 +1425,7 @@ function FairTurns() {
                   >
                     {s.doneThisRound && !isCurrent && (s.skippedThisRound ? <span aria-label="Didn't participate" className="text-muted-foreground">✗</span> : <span aria-hidden>✓</span>)}
                     <span>{s.name}</span>
-                    <span className="rounded-full bg-background/70 px-2 py-0.5 text-xs font-bold text-foreground">
-                      ×{s.total}
-                    </span>
+                    <Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-foreground/70"} />
                   </li>
                 );
               })}
