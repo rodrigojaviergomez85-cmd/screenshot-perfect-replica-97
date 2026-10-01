@@ -32,7 +32,7 @@ App de una sola página para clases en vivo por Zoom: elige un estudiante al aza
 2. NEXT es instantáneo: selección y reinicio del temporizador en el mismo frame; sin animación de barajado; guarda de 300 ms contra doble clic (`lastNextAt`); pop cosmético de 120 ms (`animate-pop-in`).
 3. Temporizador: 15–300 s (defecto 60), ámbar al ≤25 %, rojo en 0, beep suave con Web Audio API; nunca bloquea NEXT.
 4. Float usa Document Picture-in-Picture (solo Chrome/Edge); en otros navegadores se oculta y se ofrece modo Compact. Atajos Space (next) y P (pausa) funcionan también con la mini ventana enfocada.
-5. Persistencia local: preferencias y la clase del día (alumnos, tallies, ronda) en localStorage; al cambiar de día se reinician tallies y rondas conservando alumnos; sin historial; "Clear saved class" borra con confirmación.
+5. Persistencia local: preferencias y varias clases (nombre, alumnos, tallies, ronda, fecha) en localStorage; pantalla inicial "My classes"; al abrir una clase otro día se reinician tallies y rondas conservando alumnos; sin historial; borrar clase requiere confirmación.
 
 ## Estado de verificación
 
