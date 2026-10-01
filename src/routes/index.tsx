@@ -749,10 +749,10 @@ function FairTurns() {
     setScreen("class");
   };
 
-  const resetAll = () => {
+  const resetAll = (forget = false) => {
     clearSkipUndo();
-    setStudents([]);
-    setRosterText("");
+    if (forget) setStudents([]);
+    setRosterText(forget ? "" : students.map((s) => s.name).join("\n"));
     setRound(1);
     setCurrentId(null);
     setLastPicked(null);
@@ -770,7 +770,7 @@ function FairTurns() {
     } catch {
       /* ignore */
     }
-    resetAll();
+    resetAll(true);
   };
 
   const updateCoachMessage = (index: number, value: string) => {
