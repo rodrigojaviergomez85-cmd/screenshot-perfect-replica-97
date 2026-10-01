@@ -777,7 +777,7 @@ function FairTurns() {
     setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, absentDay: s.absentDay === classDay ? undefined : classDay } : s)));
   };
 
-  const handleNext = useCallback(() => {
+  const handleNext = () => {
     if (afMode) { afNext(); return; }
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
@@ -793,13 +793,13 @@ function FairTurns() {
     }
     commitPick(picked, startsNewRound);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  });
+  };
 
   const canSkip = afMode
     ? !!current && afQueue[afIndex] === current.id && !afSkipped.includes(current.id)
     : !!current && students.some((s) => s.id === current.id && !s.skippedThisRound);
 
-  const handleSkip = useCallback(() => {
+  const handleSkip = () => {
     if (afMode) { afSkip(); return; }
     if (!current) return;
     const target = students.find((s) => s.id === current.id);
@@ -836,7 +836,7 @@ function FairTurns() {
     }
     commitPick(picked, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  });
+  };
 
   const undoSkip = () => {
     if (!skipUndo) return;
