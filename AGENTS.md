@@ -11,4 +11,4 @@
 
 - Keep round-complete coach encouragements in one in-memory constant and cycle them without repeats; this preserves easy editing and session-only behavior.
 - Keep the selected timer length separate from the active turn length so in-class changes apply only to the next pick.
-- Persist only accent, coach-message list, message-visibility, and selected turn length (0 = no timer) in localStorage; class roster, rounds, and counts must remain session-only.
+- Persist the class (roster, tallies, round) in localStorage under one key with the local date; reset tallies and rounds (keeping names) when the local day changes, keep no history of past days, and delete only via the confirmed "Clear saved class" action.
