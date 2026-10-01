@@ -339,6 +339,8 @@ function FairTurns() {
   const [classDay, setClassDay] = useState(() => localDay());
   const [classes, setClasses] = useState<SavedClass[]>([]);
   const [activeClassId, setActiveClassId] = useState<string | null>(null);
+  /** Class actually loaded into the live session; only this one is ever synced back to storage. */
+  const [loadedClassId, setLoadedClassId] = useState<string | null>(null);
   const [newClassName, setNewClassName] = useState("");
   const [setupMode, setSetupMode] = useState<"new" | "edit">("new");
   const [week, setWeek] = useState(() => weekKey());
@@ -461,11 +463,11 @@ function FairTurns() {
 
   // Keep the active class entry in sync with live progress.
   useEffect(() => {
-    if (!activeClassId || screen === "home") return;
+    if (!loadedClassId || screen === "home" || (screen === "setup" && setupMode === "new")) return;
     setClasses((prev) =>
-      prev.map((c) => (c.id === activeClassId ? { ...c, students, round, day: classDay, updatedAt: Date.now() } : c)),
+      prev.map((c) => (c.id === loadedClassId ? { ...c, students, round, day: classDay, updatedAt: Date.now() } : c)),
     );
-  }, [activeClassId, classDay, round, screen, students]);
+  }, [loadedClassId, classDay, round, screen, setupMode, students]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
@@ -562,12 +564,14 @@ function FairTurns() {
     const name = newClassName.trim().slice(0, 60) || `Class ${classes.length + 1}`;
     setClasses((prev) => [...prev, { id, name, day: localDay(), round: 1, students: list, updatedAt: Date.now() }]);
     setActiveClassId(id);
+    setLoadedClassId(id);
     enterClass(list, 1);
   };
 
   const openClass = (c: SavedClass) => {
     const sameDay = c.day === localDay();
     setActiveClassId(c.id);
+    setLoadedClassId(c.id);
     enterClass(normalizeStudents(sameDay ? c.students : resetDay(c.students)), sameDay ? c.round : 1);
   };
 
@@ -579,10 +583,13 @@ function FairTurns() {
     setLastPicked(null);
     pipWin?.close();
     setCompact(false);
+    setLoadedClassId(null);
     setScreen("home");
   };
 
   const newClass = () => {
+    setLoadedClassId(null);
+    setTimerRunning(false);
     setSetupMode("new");
     setNewClassName("");
     setRosterText("");
@@ -599,6 +606,7 @@ function FairTurns() {
     if (!window.confirm(`Delete "${c.name}"? This removes its students and today's tallies from this browser.`)) return;
     if (c.id === activeClassId) {
       setActiveClassId(null);
+      setLoadedClassId(null);
       setStudents([]);
     }
     setClasses((prev) => prev.filter((x) => x.id !== c.id));
@@ -710,18 +718,29 @@ function FairTurns() {
     startAfTimer();
   };
 
+  /** Rebuild the rest of an AF session: keep used ids, drop absent/removed, fill with eligible students (not-yet-AF first). */
+  const planAf = (list: Student[], queue: string[], fromIndex: number): string[] => {
+    const used = queue.slice(0, fromIndex);
+    const valid = new Map(list.filter((s) => s.absentDay !== classDay).map((s) => [s.id, s]));
+    const planned = queue.slice(fromIndex).filter((id) => valid.has(id) && !used.includes(id));
+    const others = [...valid.values()].filter((s) => !used.includes(s.id) && !planned.includes(s.id));
+    const fresh = (id: string) => valid.get(id)?.afWeek !== week;
+    const pool = [
+      ...planned.filter(fresh), ...shuffled(others.filter((s) => s.afWeek !== week)).map((s) => s.id),
+      ...planned.filter((id) => !fresh(id)), ...shuffled(others.filter((s) => s.afWeek === week)).map((s) => s.id),
+    ];
+    return [...used, ...pool].slice(0, Math.max(afCount, used.length));
+  };
+
   /** Automatic Fluency: weekly-fair picks (not-yet-AF first), no repeats within a session. */
   const afNext = () => {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
-    let queue = afQueue;
     let index = afIndex + 1;
     let skipped = afSkipped;
+    let queue = afIndex >= 0 && index < afCount ? planAf(students, afQueue, index) : [];
     if (index >= queue.length) {
-      const present = students.filter((s) => s.absentDay !== classDay);
-      const fresh = shuffled(present.filter((s) => s.afWeek !== week));
-      const repeat = shuffled(present.filter((s) => s.afWeek === week));
-      queue = [...fresh, ...repeat].slice(0, afCount).map((s) => s.id);
+      queue = planAf(students, [], 0);
       index = 0;
       skipped = [];
       if (queue.length === 0) return;
@@ -747,11 +766,12 @@ function FairTurns() {
     );
     setAfSkipped([...afSkipped, id]);
     const nextIndex = afIndex + 1;
-    if (nextIndex < afQueue.length) {
-      setAfIndex(nextIndex);
-      showAfPick(next, afQueue[nextIndex]!);
+    const queue = nextIndex < afCount ? planAf(next, afQueue, nextIndex) : afQueue.slice(0, nextIndex);
+    setAfQueue(queue);
+    setAfIndex(nextIndex);
+    if (nextIndex < queue.length) {
+      showAfPick(next, queue[nextIndex]!);
     } else {
-      setAfIndex(nextIndex);
       setStudents(next);
       setCurrentId(null);
       setTimerRunning(false);
@@ -857,7 +877,7 @@ function FairTurns() {
   };
 
   const toggleTimer = useCallback(() => {
-    if (!useTimer || (!afMode && turnSeconds === 0)) return;
+    if (!afMode && (!useTimer || turnSeconds === 0)) return;
     setTimerRunning((r) => {
       if (!r && remaining === 0) {
         setRemaining(activeTurnSeconds);
@@ -865,7 +885,7 @@ function FairTurns() {
       }
       return !r;
     });
-  }, [activeTurnSeconds, remaining, turnSeconds, useTimer]);
+  }, [activeTurnSeconds, afMode, remaining, turnSeconds, useTimer]);
 
   const applyTurnSeconds = useCallback(
     (seconds: number) => {
@@ -908,7 +928,7 @@ function FairTurns() {
         toggleTimer();
       } else if (e.key.toLowerCase() === "t") {
         e.preventDefault();
-        cycleTurnSeconds();
+        if (!afMode) cycleTurnSeconds();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -917,7 +937,7 @@ function FairTurns() {
       window.removeEventListener("keydown", onKey);
       pipWin?.removeEventListener("keydown", onKey);
     };
-  }, [cycleTurnSeconds, handleNext, handleSkip, screen, toggleTimer, pipWin]);
+  }, [afMode, cycleTurnSeconds, handleNext, handleSkip, screen, toggleTimer, pipWin]);
 
   // ---- float (Document Picture-in-Picture) ----
   useEffect(() => {
@@ -1482,7 +1502,7 @@ function FairTurns() {
         {current?.name ?? "—"}
       </p>
       {showRoster && rosterPanel}
-      {useTimer && (
+      {(useTimer || afMode) && (
         <div className="space-y-1">
           <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
             <p className={`text-center text-2xl font-extrabold tabular-nums ${timeColor}`}>
@@ -1510,7 +1530,7 @@ function FairTurns() {
         <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate">
           ✗
         </Button>
-        {useTimer && (
+        {(useTimer || afMode) && (
           <>
             <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
               {timerRunning ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
@@ -1679,7 +1699,8 @@ function FairTurns() {
         </div>
 
         <div className="flex flex-col gap-6">
-          {useTimer && (
+          {!useTimer && !afMode && <div className="soft-card p-4">{modeControls}</div>}
+          {(useTimer || afMode) && (
             <div className="soft-card space-y-4 p-6 text-center">
               <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
                 <p className={`font-[family-name:var(--font-display)] text-7xl font-extrabold tabular-nums ${timeColor}`}>
