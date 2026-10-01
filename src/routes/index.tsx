@@ -1147,8 +1147,8 @@ function FairTurns() {
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-6">
       {pipPortal}
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-baseline gap-4">
+      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:flex sm:flex-wrap sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="flex items-center gap-2">
             <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight">
               Fair Turns
@@ -1159,11 +1159,18 @@ function FairTurns() {
             Round {round}
           </span>
         </div>
-        <div className="flex gap-2">
+        <div className="col-span-full flex flex-wrap items-center justify-end gap-2 sm:col-span-1">
           {pipSupported ? (
             !pipWin && (
-              <Button className="rounded-xl" onClick={() => void openFloat()}>
-                <PictureInPicture2 className="mr-1 h-4 w-4" /> Float
+              <Button
+                className="h-20 min-w-[16rem] rounded-2xl px-6 text-left shadow-lg shadow-primary/30"
+                onClick={() => void openFloat()}
+              >
+                <PictureInPicture2 className="mr-4 h-8 w-8 shrink-0" aria-hidden />
+                <span className="flex min-w-0 flex-col items-start text-left leading-tight">
+                  <span className="text-lg font-bold whitespace-nowrap">Open floating window</span>
+                  <span className="text-sm font-medium whitespace-nowrap opacity-90">Keep controls above Zoom</span>
+                </span>
               </Button>
             )
           ) : (
@@ -1176,11 +1183,12 @@ function FairTurns() {
               <Minimize2 className="mr-1 h-4 w-4" /> Compact mode
             </Button>
           )}
-          <Button variant="outline" className="rounded-xl" onClick={editRoster}>
+          <Button variant="outline" size="sm" className="rounded-xl" onClick={editRoster}>
             Edit roster
           </Button>
           <Button
             variant="outline"
+            size="sm"
             className="rounded-xl"
             onClick={() => {
               setTimerRunning(false);
