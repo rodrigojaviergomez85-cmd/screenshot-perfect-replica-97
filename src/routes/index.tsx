@@ -1101,7 +1101,7 @@ function FairTurns() {
       <div className="flex items-center gap-2">
         <Button
           onClick={handleNext}
-          disabled={!banner && pending.length === 0}
+          disabled={students.length === 0}
           className="h-12 flex-1 rounded-2xl text-xl font-extrabold tracking-wide"
         >
           NEXT
@@ -1242,7 +1242,7 @@ function FairTurns() {
           <div className="flex w-full max-w-md items-center gap-3">
             <Button
               onClick={handleNext}
-              disabled={!banner && pending.length === 0}
+              disabled={students.length === 0}
               className="h-24 flex-1 rounded-3xl text-4xl font-extrabold tracking-wide"
             >
               NEXT
