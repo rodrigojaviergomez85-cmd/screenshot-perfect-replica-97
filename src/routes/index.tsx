@@ -273,6 +273,12 @@ function FairTurns() {
     activeTurnSeconds: number; timerRunning: boolean; timeUp: boolean; round: number; banner: RoundBanner | null;
   } | null>(null);
   const skipUndoTimer = useRef<number | null>(null);
+  const bannerShownForRound = useRef<number | null>(null);
+  const clearSkipUndo = () => {
+    if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
+    skipUndoTimer.current = null;
+    setSkipUndo(null);
+  };
 
   const parsed = useMemo(() => parseNames(rosterText), [rosterText]);
   const pending = useMemo(() => students.filter((s) => !s.doneThisRound), [students]);
@@ -355,6 +361,7 @@ function FairTurns() {
   }, [timerRunning]);
 
   const startClass = () => {
+    clearSkipUndo();
     setStudents(
       parsed.map((name) => ({
         id: makeId(),
@@ -366,7 +373,9 @@ function FairTurns() {
     );
     setRound(1);
     setCurrentId(null);
+    setLastPicked(null);
     setBanner(null);
+    bannerShownForRound.current = null;
     const [firstMessage, ...laterMessages] = activeMessages;
     messageQueue.current = showCoachMessages && firstMessage
       ? [firstMessage, ...shuffleMessages(laterMessages)]
@@ -405,9 +414,13 @@ function FairTurns() {
     [turnSeconds, useTimer],
   );
 
+  const roundComplete = students.length > 0 && students.every((s) => s.doneThisRound);
+
+  // Show the round-complete banner once per completed round. The banner never changes round data.
   useEffect(() => {
-    if (screen !== "class" || banner || students.length === 0) return;
-    if (!students.every((s) => s.doneThisRound)) return;
+    if (screen !== "class" || !roundComplete) return;
+    if (bannerShownForRound.current === round) return;
+    bannerShownForRound.current = round;
     if (showCoachMessages && messageQueue.current.length === 0 && activeMessages.length > 0) {
       messageQueue.current = shuffleMessages(activeMessages, lastCoachMessage.current);
     }
@@ -415,7 +428,7 @@ function FairTurns() {
     if (message) lastCoachMessage.current = message;
     setBanner({ round, message, exiting: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, screen, activeMessages, banner, round, showCoachMessages]);
+  }, [roundComplete, screen, round]);
 
   useEffect(() => {
     if (!banner) return;
@@ -425,8 +438,6 @@ function FairTurns() {
         setBanner((currentBanner) => currentBanner ? { ...currentBanner, exiting: true } : null);
         return;
       }
-      setStudents((cur) => cur.map((s) => ({ ...s, doneThisRound: false, skippedThisRound: false })));
-      setRound((r) => r + 1);
       setBanner(null);
     }, delay);
     return () => window.clearTimeout(t);
@@ -436,6 +447,8 @@ function FairTurns() {
     const name = newName.trim().replace(/\s+/g, " ");
     if (!name) return;
     setNewName("");
+    if (students.some((s) => s.name.toLowerCase() === name.toLowerCase())) return;
+    clearSkipUndo();
     setStudents((prev) =>
       prev.some((s) => s.name.toLowerCase() === name.toLowerCase())
         ? prev
@@ -443,31 +456,42 @@ function FairTurns() {
     );
   };
 
-  const removeStudent = (id: string) => setStudents((prev) => prev.filter((s) => s.id !== id));
+  const removeStudent = (id: string) => {
+    clearSkipUndo();
+    setStudents((prev) => prev.filter((s) => s.id !== id));
+  };
 
   const addImported = (names: string[]) => {
     setRosterText((t) => parseNames([t, ...names].join("\n")).join("\n"));
   };
 
+  /** Shared pick rule for NEXT and Skip: no repeats in a round; first pick of a new round avoids the last picked. */
+  const choosePick = (list: Student[], newRound: boolean, lastId: string | null): Student | null => {
+    let pool = newRound ? list : list.filter((s) => !s.doneThisRound);
+    if (newRound && list.length >= 2 && lastId) {
+      const filtered = pool.filter((s) => s.id !== lastId);
+      if (filtered.length > 0) pool = filtered;
+    }
+    if (pool.length === 0) return null;
+    return pool[Math.floor(Math.random() * pool.length)] ?? null;
+  };
+
   const handleNext = useCallback(() => {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
-    const startsNewRound = !!banner;
-    let pool = startsNewRound ? students : students.filter((s) => !s.doneThisRound);
-    if (startsNewRound && students.length >= 2 && lastPicked) {
-      const filtered = pool.filter((s) => s.id !== lastPicked.id);
-      if (filtered.length > 0) pool = filtered;
-    }
-    if (pool.length === 0) return;
-    lastNextAt.current = now;
-    const picked = pool[Math.floor(Math.random() * pool.length)];
+    if (students.length === 0) return;
+    const startsNewRound = students.every((s) => s.doneThisRound);
+    const picked = choosePick(students, startsNewRound, lastPicked?.id ?? null);
     if (!picked) return;
+    lastNextAt.current = now;
+    clearSkipUndo();
     if (startsNewRound) {
       setBanner(null);
       setRound((r) => r + 1);
     }
     commitPick(picked, startsNewRound);
-  }, [banner, commitPick, lastPicked, students]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commitPick, lastPicked, students]);
 
   const canSkip = !!current && students.some((s) => s.id === current.id && !s.skippedThisRound);
 
@@ -496,24 +520,17 @@ function FairTurns() {
           }
         : s,
     );
-    const startsNewRound = !!banner;
-    let pool = startsNewRound ? next : next.filter((s) => !s.doneThisRound);
-    if (startsNewRound && next.length >= 2 && lastPicked) {
-      const filtered = pool.filter((s) => s.id !== lastPicked.id);
-      if (filtered.length > 0) pool = filtered;
-    }
     setStudents(next);
-    const picked = pool[Math.floor(Math.random() * pool.length)];
+    // Skip completes the current round if nobody is left; the next round starts only on NEXT.
+    const picked = choosePick(next, false, null);
     if (!picked) {
       setCurrentId(null);
       setTimerRunning(false);
+      setTimeUp(false);
       return;
     }
-    if (startsNewRound) {
-      setBanner(null);
-      setRound((r) => r + 1);
-    }
-    commitPick(picked, startsNewRound);
+    commitPick(picked, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTurnSeconds, banner, commitPick, current, currentId, lastPicked, remaining, round, students, timeUp, timerRunning]);
 
   const undoSkip = () => {
@@ -527,9 +544,8 @@ function FairTurns() {
     setTimeUp(skipUndo.timeUp);
     setRound(skipUndo.round);
     setBanner(skipUndo.banner);
-    setSkipUndo(null);
-    if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
-    skipUndoTimer.current = null;
+    if (!skipUndo.students.every((s) => s.doneThisRound)) bannerShownForRound.current = null;
+    clearSkipUndo();
   };
 
   const toggleTimer = useCallback(() => {
@@ -633,6 +649,7 @@ function FairTurns() {
 
   const applyRosterEdits = () => {
     const names = parsed;
+    clearSkipUndo();
     setStudents((prev) => {
       const byName = new Map(prev.map((s) => [s.name.toLowerCase(), s]));
       return names.map((name) => {
@@ -647,10 +664,14 @@ function FairTurns() {
   };
 
   const resetAll = () => {
+    clearSkipUndo();
     setStudents([]);
     setRosterText("");
     setRound(1);
     setCurrentId(null);
+    setLastPicked(null);
+    setBanner(null);
+    bannerShownForRound.current = null;
     setClosingMessage(null);
     setScreen("setup");
   };
@@ -1163,6 +1184,7 @@ function FairTurns() {
             className="rounded-xl"
             onClick={() => {
               setTimerRunning(false);
+              clearSkipUndo();
               const [next] = showCoachMessages
                 ? shuffleMessages(activeMessages, lastCoachMessage.current)
                 : [];
