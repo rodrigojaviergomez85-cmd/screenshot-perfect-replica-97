@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -36,9 +37,33 @@ type Student = {
   skippedThisRound?: boolean;
 };
 
-type Screen = "setup" | "class" | "summary";
+type Screen = "home" | "setup" | "class" | "summary";
 
-const CLASS_STORAGE_KEY = "fair-turns-class";
+const CLASS_STORAGE_KEY = "fair-turns-class"; // legacy single-class key, migrated once
+const CLASSES_STORAGE_KEY = "fair-turns-classes";
+
+type SavedClass = { id: string; name: string; day: string; round: number; students: Student[]; updatedAt: number };
+
+function normalizeStudents(raw: unknown): Student[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((s): s is Student => !!s && typeof s.id === "string" && typeof s.name === "string")
+    .map((s) => ({
+      id: s.id, name: s.name, total: Number(s.total) || 0, roundsCompleted: Number(s.roundsCompleted) || 0,
+      doneThisRound: !!s.doneThisRound, skippedThisRound: !!s.skippedThisRound,
+    }));
+}
+
+function normalizeClass(raw: unknown): SavedClass | null {
+  if (!raw || typeof raw !== "object") return null;
+  const c = raw as Partial<SavedClass>;
+  if (typeof c.id !== "string" || typeof c.name !== "string") return null;
+  return {
+    id: c.id, name: c.name.slice(0, 60), day: typeof c.day === "string" ? c.day : "",
+    round: Number.isInteger(c.round) && (c.round ?? 0) > 0 ? c.round! : 1,
+    students: normalizeStudents(c.students), updatedAt: Number(c.updatedAt) || 0,
+  };
+}
 
 function localDay(date = new Date()) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -263,7 +288,7 @@ function TimerLengthControls({
 }
 
 function FairTurns() {
-  const [screen, setScreen] = useState<Screen>("setup");
+  const [screen, setScreen] = useState<Screen>("home");
   const [rosterText, setRosterText] = useState("");
   const [useTimer, setUseTimer] = useState(true);
   const [turnSeconds, setTurnSeconds] = useState(60);
@@ -287,6 +312,10 @@ function FairTurns() {
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [classDay, setClassDay] = useState(() => localDay());
+  const [classes, setClasses] = useState<SavedClass[]>([]);
+  const [activeClassId, setActiveClassId] = useState<string | null>(null);
+  const [newClassName, setNewClassName] = useState("");
+  const [setupMode, setSetupMode] = useState<"new" | "edit">("new");
 
   const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
   const messageQueue = useRef<string[]>([]);
@@ -348,25 +377,27 @@ function FairTurns() {
           setActiveTurnSeconds(seconds);
         }
       }
-      const savedClass = window.localStorage.getItem(CLASS_STORAGE_KEY);
-      if (savedClass) {
-        const data = JSON.parse(savedClass) as { day?: string; round?: number; students?: Student[] };
-        const list = Array.isArray(data.students)
-          ? data.students.filter((s) => s && typeof s.id === "string" && typeof s.name === "string").map((s) => ({
-              id: s.id, name: s.name, total: Number(s.total) || 0, roundsCompleted: Number(s.roundsCompleted) || 0,
-              doneThisRound: !!s.doneThisRound, skippedThisRound: !!s.skippedThisRound,
-            }))
-          : [];
-        if (list.length > 0) {
-          const today = localDay();
-          const sameDay = data.day === today;
-          setStudents(sameDay ? list : resetDay(list));
-          setRound(sameDay && Number.isInteger(data.round) && (data.round ?? 0) > 0 ? data.round! : 1);
-          setClassDay(today);
-          setTimerRunning(false);
-          setScreen("class");
-        }
+      const savedClasses = window.localStorage.getItem(CLASSES_STORAGE_KEY);
+      let loaded: SavedClass[] = [];
+      let lastId: string | null = null;
+      if (savedClasses) {
+        const data = JSON.parse(savedClasses) as { lastId?: unknown; classes?: unknown };
+        loaded = Array.isArray(data.classes) ? data.classes.map(normalizeClass).filter((c): c is SavedClass => !!c) : [];
+        lastId = typeof data.lastId === "string" ? data.lastId : null;
       }
+      const legacy = window.localStorage.getItem(CLASS_STORAGE_KEY);
+      if (legacy) {
+        const data = JSON.parse(legacy) as { day?: string; round?: number; students?: unknown };
+        const list = normalizeStudents(data.students);
+        if (list.length > 0) {
+          const id = makeId();
+          loaded = [...loaded, { id, name: "My class", day: data.day ?? "", round: data.round ?? 1, students: list, updatedAt: Date.now() }];
+          lastId = id;
+        }
+        window.localStorage.removeItem(CLASS_STORAGE_KEY);
+      }
+      setClasses(loaded);
+      if (lastId && loaded.some((c) => c.id === lastId)) setActiveClassId(lastId);
     } catch {
       /* Invalid or unavailable browser storage falls back to defaults. */
     }
@@ -386,15 +417,22 @@ function FairTurns() {
     }
   }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, turnSeconds]);
 
+  // Keep the active class entry in sync with live progress.
+  useEffect(() => {
+    if (!activeClassId) return;
+    setClasses((prev) =>
+      prev.map((c) => (c.id === activeClassId ? { ...c, students, round, day: classDay, updatedAt: Date.now() } : c)),
+    );
+  }, [activeClassId, classDay, round, students]);
+
   useEffect(() => {
     if (!preferencesLoaded) return;
     try {
-      if (students.length === 0) window.localStorage.removeItem(CLASS_STORAGE_KEY);
-      else window.localStorage.setItem(CLASS_STORAGE_KEY, JSON.stringify({ day: classDay, round, students }));
+      window.localStorage.setItem(CLASSES_STORAGE_KEY, JSON.stringify({ lastId: activeClassId, classes }));
     } catch {
-      /* Storage unavailable: the class still works for this session. */
+      /* Storage unavailable: classes still work for this session. */
     }
-  }, [classDay, preferencesLoaded, round, students]);
+  }, [activeClassId, classes, preferencesLoaded]);
 
   // ---- day rollover (also when the tab stays open overnight) ----
   useEffect(() => {
@@ -445,18 +483,10 @@ function FairTurns() {
     return () => window.clearInterval(id);
   }, [timerRunning]);
 
-  const startClass = () => {
+  const enterClass = (list: Student[], classRound: number) => {
     clearSkipUndo();
-    setStudents(
-      parsed.map((name) => ({
-        id: makeId(),
-        name,
-        total: 0,
-        roundsCompleted: 0,
-        doneThisRound: false,
-      })),
-    );
-    setRound(1);
+    setStudents(list);
+    setRound(classRound);
     setClassDay(localDay());
     setCurrentId(null);
     setLastPicked(null);
@@ -472,6 +502,54 @@ function FairTurns() {
     setTimerRunning(false);
     setTimeUp(false);
     setScreen("class");
+  };
+
+  const startClass = () => {
+    const id = makeId();
+    const list = parsed.map((name) => ({ id: makeId(), name, total: 0, roundsCompleted: 0, doneThisRound: false }));
+    const name = newClassName.trim().slice(0, 60) || `Class ${classes.length + 1}`;
+    setClasses((prev) => [...prev, { id, name, day: localDay(), round: 1, students: list, updatedAt: Date.now() }]);
+    setActiveClassId(id);
+    enterClass(list, 1);
+  };
+
+  const openClass = (c: SavedClass) => {
+    const sameDay = c.day === localDay();
+    setActiveClassId(c.id);
+    enterClass(sameDay ? c.students : resetDay(c.students), sameDay ? c.round : 1);
+  };
+
+  const goHome = () => {
+    setTimerRunning(false);
+    clearSkipUndo();
+    setBanner(null);
+    setCurrentId(null);
+    setLastPicked(null);
+    pipWin?.close();
+    setCompact(false);
+    setScreen("home");
+  };
+
+  const newClass = () => {
+    setSetupMode("new");
+    setNewClassName("");
+    setRosterText("");
+    setScreen("setup");
+  };
+
+  const renameClass = (c: SavedClass) => {
+    const name = window.prompt("Rename class", c.name)?.trim().slice(0, 60);
+    if (!name) return;
+    setClasses((prev) => prev.map((x) => (x.id === c.id ? { ...x, name } : x)));
+  };
+
+  const deleteClass = (c: SavedClass) => {
+    if (!window.confirm(`Delete "${c.name}"? This removes its students and today's tallies from this browser.`)) return;
+    if (c.id === activeClassId) {
+      setActiveClassId(null);
+      setStudents([]);
+    }
+    setClasses((prev) => prev.filter((x) => x.id !== c.id));
   };
 
   const commitPick = useCallback(
@@ -728,6 +806,7 @@ function FairTurns() {
   };
 
   const editRoster = () => {
+    setSetupMode("edit");
     setRosterText(students.map((s) => s.name).join("\n"));
     setTimerRunning(false);
     setScreen("setup");
@@ -747,30 +826,6 @@ function FairTurns() {
     });
     setCurrentId(null);
     setScreen("class");
-  };
-
-  const resetAll = (forget = false) => {
-    clearSkipUndo();
-    if (forget) setStudents([]);
-    setRosterText(forget ? "" : students.map((s) => s.name).join("\n"));
-    setRound(1);
-    setCurrentId(null);
-    setLastPicked(null);
-    setBanner(null);
-    bannerShownForRound.current = null;
-    setClosingMessage(null);
-    setScreen("setup");
-  };
-
-  const clearSavedClass = () => {
-    if (!window.confirm("Delete the saved class? This removes all student names and today's tallies from this browser.")) return;
-    setTimerRunning(false);
-    try {
-      window.localStorage.removeItem(CLASS_STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
-    resetAll(true);
   };
 
   const updateCoachMessage = (index: number, value: string) => {
@@ -803,9 +858,66 @@ function FairTurns() {
     undoMessageTimer.current = null;
   };
 
+  // ---------------- home ----------------
+  if (screen === "home") {
+    const sortedClasses = [...classes].sort((a, b) => a.name.localeCompare(b.name));
+    return (
+      <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-8 px-5 py-12">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <h1 className="font-[family-name:var(--font-display)] text-5xl font-extrabold tracking-tight">Fair Turns</h1>
+              <span className="size-3 rounded-full bg-primary" aria-label={`${accentColor} interface color`} />
+            </div>
+            <p className="text-lg text-muted-foreground">My classes</p>
+          </div>
+          <Button size="lg" className="h-12 rounded-2xl px-6 text-base font-bold" onClick={newClass}>
+            <Plus className="mr-1 h-5 w-5" /> New class
+          </Button>
+        </header>
+        {sortedClasses.length === 0 ? (
+          <section className="soft-card space-y-4 p-8 text-center">
+            <p className="text-lg text-muted-foreground">No classes yet. Create your first one to get started.</p>
+            <Button size="lg" className="rounded-2xl" onClick={newClass}><Plus className="mr-1 h-5 w-5" /> New class</Button>
+          </section>
+        ) : (
+          <ul className="grid gap-4 sm:grid-cols-2">
+            {sortedClasses.map((c) => {
+              const isLast = c.id === activeClassId;
+              return (
+                <li key={c.id} className={`soft-card relative flex items-stretch overflow-hidden ${isLast ? "ring-2 ring-primary" : ""}`}>
+                  <button type="button" onClick={() => openClass(c)} className="flex flex-1 flex-col items-start gap-1 p-5 text-left hover:bg-muted/60">
+                    {isLast && (
+                      <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground">Last used</span>
+                    )}
+                    <span className="font-[family-name:var(--font-display)] text-xl font-extrabold">{c.name}</span>
+                    <span className="flex items-center gap-1 text-sm text-muted-foreground">
+                      <Users className="h-4 w-4" /> {c.students.length} {c.students.length === 1 ? "student" : "students"}
+                    </span>
+                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="m-2 rounded-xl" aria-label={`Options for ${c.name}`}>
+                        <MoreVertical className="h-5 w-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => renameClass(c)}><Pencil className="mr-2 h-4 w-4" /> Rename</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => deleteClass(c)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" /> Delete</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </main>
+    );
+  }
+
   // ---------------- setup ----------------
   if (screen === "setup") {
-    const editing = students.length > 0;
+    const editing = setupMode === "edit";
     return (
       <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-8 px-5 py-12">
         <header className="space-y-3">
@@ -824,6 +936,19 @@ function FairTurns() {
         </header>
 
         <section className="soft-card space-y-6 p-6 sm:p-8">
+          {!editing && (
+            <div className="space-y-2">
+              <label htmlFor="class-name" className="text-sm font-semibold">Class name</label>
+              <input
+                id="class-name"
+                value={newClassName}
+                maxLength={60}
+                onChange={(e) => setNewClassName(e.target.value)}
+                placeholder="e.g. Monday 8am — Level 2"
+                className="w-full rounded-xl border border-input bg-background px-4 py-3 text-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </div>
+          )}
           <div className="space-y-2">
             <label htmlFor="roster" className="text-sm font-semibold">
               Paste or type student names, one per line
@@ -989,12 +1114,12 @@ function FairTurns() {
             >
               {editing ? "Save roster" : "Start class"}
             </Button>
-            {editing && (
+            {(editing || classes.length > 0) && (
               <Button
                 size="lg"
                 variant="outline"
                 className="h-14 rounded-2xl px-6 text-lg"
-                onClick={() => setScreen("class")}
+                onClick={() => setScreen(editing ? "class" : "home")}
               >
                 Cancel
               </Button>
@@ -1050,7 +1175,7 @@ function FairTurns() {
               {sorted.map((s) => (
                 <tr key={s.id} className="border-t border-border">
                   <td className="px-5 py-3 text-lg font-semibold">{s.name}</td>
-                  <td className="px-5 py-3 text-lg">{s.total}</td>
+                  <td className="px-5 py-3 text-lg"><Tally count={s.total} /></td>
                   <td className="px-5 py-3 text-lg">{s.roundsCompleted}</td>
                 </tr>
               ))}
@@ -1062,8 +1187,8 @@ function FairTurns() {
           <span className={diff <= 1 ? "text-primary" : "text-destructive"}>{diff}</span>
         </p>
         <div className="flex flex-wrap gap-3">
-          <Button size="lg" className="h-14 rounded-2xl px-8 text-lg font-bold" onClick={() => resetAll()}>
-            Start new class
+          <Button size="lg" className="h-14 rounded-2xl px-8 text-lg font-bold" onClick={goHome}>
+            Back to my classes
           </Button>
           <Button
             size="lg"
@@ -1249,7 +1374,7 @@ function FairTurns() {
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex items-center gap-2">
             <h1 className="font-[family-name:var(--font-display)] text-2xl font-extrabold tracking-tight">
-              Fair Turns
+              {classes.find((c) => c.id === activeClassId)?.name ?? "Fair Turns"}
             </h1>
             <span className="size-2.5 rounded-full bg-primary" aria-label={`${accentColor} interface color`} />
           </div>
@@ -1300,8 +1425,8 @@ function FairTurns() {
           >
             End class
           </Button>
-          <Button variant="ghost" size="sm" className="rounded-xl text-muted-foreground" onClick={clearSavedClass}>
-            Clear saved class
+          <Button variant="outline" size="sm" className="rounded-xl" onClick={goHome}>
+            <ArrowLeft className="mr-1 h-4 w-4" /> My classes
           </Button>
         </div>
       </header>
