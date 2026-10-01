@@ -738,8 +738,19 @@ function FairTurns() {
     if (now - lastNextAt.current < 300) return;
     let index = afIndex + 1;
     let skipped = afSkipped;
-    let queue = afIndex >= 0 && index < afCount ? planAf(students, afQueue, index) : [];
-    if (index >= queue.length) {
+    const inSession = afIndex >= 0 && index < afCount;
+    let queue = inSession ? planAf(students, afQueue, index) : [];
+    if (inSession && index >= queue.length) {
+      // No distinct eligible candidate left in this session: end it cleanly, pick nobody.
+      lastNextAt.current = now;
+      clearSkipUndo();
+      setAfQueue(queue); setAfIndex(afCount);
+      setCurrentId(null);
+      setTimerRunning(false);
+      setTimeUp(false);
+      return;
+    }
+    if (!inSession) {
       queue = planAf(students, [], 0);
       index = 0;
       skipped = [];
@@ -768,7 +779,7 @@ function FairTurns() {
     const nextIndex = afIndex + 1;
     const queue = nextIndex < afCount ? planAf(next, afQueue, nextIndex) : afQueue.slice(0, nextIndex);
     setAfQueue(queue);
-    setAfIndex(nextIndex);
+    setAfIndex(nextIndex < queue.length ? nextIndex : afCount);
     if (nextIndex < queue.length) {
       showAfPick(next, queue[nextIndex]!);
     } else {
@@ -1441,7 +1452,8 @@ function FairTurns() {
     </div>
   );
 
-  const afProgress = afMode
+  const afEnded = afMode && !current && afIndex >= afCount;
+  const afProgress = afEnded ? "AF session ended · NEXT starts a new one" : afMode
     ? `AF ${Math.min(afIndex + 1, afQueue.length)}/${afQueue.length || afCount} · ${afSeconds}s`
     : null;
 
