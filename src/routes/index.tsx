@@ -739,8 +739,10 @@ function FairTurns() {
     return { phase: "cycle", ids: pool.map((s) => s.id), reset };
   };
 
-  const afCommit = (id: string, phase: "fresh" | "cycle", reset = false) => {
-    if (phase === "cycle") setAfQueue(reset ? [id] : [...afQueue.filter((x) => x !== id), id]);
+  const afCommit = (id: string, _phase: "fresh" | "cycle", reset = false) => {
+    // Every AF turn (fresh or cycle) counts toward the current cycle, so present students
+    // are all visited before anyone repeats.
+    setAfQueue(reset ? [id] : [...afQueue.filter((x) => x !== id), id]);
     setAfSkipped([]);
     showAfPick(students, id);
   };
@@ -812,7 +814,7 @@ function FairTurns() {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     if (afMode) {
-      const { phase, ids } = afEligible(students, currentId);
+      const { phase, ids, reset } = afEligible(students, currentId);
       if (!ids.includes(id)) {
         notify(phase === "fresh"
           ? `${target.name} already did AF this week — pick someone who hasn't yet.`
