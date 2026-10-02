@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, Users, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserX, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -346,7 +346,7 @@ function FairTurns() {
   const [week, setWeek] = useState(() => weekKey());
   const [afMode, setAfMode] = useState(false);
   const [afCount, setAfCount] = useState<2 | 3>(2);
-  const [afSeconds, setAfSeconds] = useState(120);
+  const [afSeconds, setAfSeconds] = useState(30);
   const [afQueue, setAfQueue] = useState<string[]>([]);
   const [afIndex, setAfIndex] = useState(-1);
   const [afSkipped, setAfSkipped] = useState<string[]>([]);
@@ -419,7 +419,7 @@ function FairTurns() {
       const savedAfCount = window.localStorage.getItem(AF_COUNT_KEY);
       if (savedAfCount === "3") setAfCount(3);
       const savedAfSeconds = Number(window.localStorage.getItem(AF_SECONDS_KEY));
-      if (Number.isInteger(savedAfSeconds) && savedAfSeconds >= 30 && savedAfSeconds <= 600) setAfSeconds(savedAfSeconds);
+      if (Number.isInteger(savedAfSeconds) && savedAfSeconds >= 10 && savedAfSeconds <= 600) setAfSeconds(savedAfSeconds);
       const savedClasses = window.localStorage.getItem(CLASSES_STORAGE_KEY);
       let loaded: SavedClass[] = [];
       let lastId: string | null = null;
@@ -808,6 +808,57 @@ function FairTurns() {
     clearSkipUndo();
     setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, absentDay: s.absentDay === classDay ? undefined : classDay } : s)));
   };
+
+  const [pickNotice, setPickNotice] = useState<string | null>(null);
+  const pickNoticeTimer = useRef<number | null>(null);
+  const notify = (msg: string) => {
+    setPickNotice(msg);
+    if (pickNoticeTimer.current !== null) window.clearTimeout(pickNoticeTimer.current);
+    pickNoticeTimer.current = window.setTimeout(() => { setPickNotice(null); pickNoticeTimer.current = null; }, 3500);
+  };
+
+  /** Manual pick by clicking a name: same bookkeeping as NEXT, same eligibility rules. */
+  const manualPick = (id: string) => {
+    if (id === currentId) return;
+    const target = students.find((s) => s.id === id);
+    if (!target) return;
+    if (isAbsent(target)) { notify(`${target.name} is absent — mark present first.`); return; }
+    const now = performance.now();
+    if (now - lastNextAt.current < 300) return;
+    if (afMode) {
+      const inSession = afIndex >= 0 && afIndex + 1 < afCount;
+      const used = inSession ? afQueue.slice(0, afIndex + 1) : [];
+      if (used.includes(id)) { notify(`${target.name} already spoke in this AF session.`); return; }
+      if (target.afWeek === week && presentStudents.some((s) => s.afWeek !== week && !used.includes(s.id))) {
+        notify(`${target.name} already did AF this week — pick someone who hasn't yet.`);
+        return;
+      }
+      lastNextAt.current = now;
+      clearSkipUndo();
+      setPickNotice(null);
+      setAfQueue([...used, id]); setAfIndex(used.length);
+      if (!inSession) setAfSkipped([]);
+      showAfPick(students, id);
+      return;
+    }
+    lastNextAt.current = now;
+    clearSkipUndo();
+    setPickNotice(null);
+    const startsNewRound = presentStudents.length > 0 && presentStudents.every((s) => s.doneThisRound);
+    if (startsNewRound) { setBanner(null); setRound((r) => r + 1); }
+    commitPick(target, startsNewRound);
+  };
+
+  const absenceButton = (s: Student, small = false) => (
+    <button type="button" onClick={(e) => { e.stopPropagation(); toggleAbsent(s.id); }}
+      title={isAbsent(s) ? "Absent today — mark present" : "Mark absent today"}
+      aria-label={isAbsent(s) ? `Mark ${s.name} present` : `Mark ${s.name} absent`}
+      className={`shrink-0 rounded p-0.5 hover:bg-muted ${isAbsent(s) ? "text-destructive" : "opacity-60"}`}>
+      {isAbsent(s) ? <UserCheck className={small ? "h-3.5 w-3.5" : "h-4 w-4"} /> : <UserX className={small ? "h-3.5 w-3.5" : "h-4 w-4"} />}
+    </button>
+  );
+
+  const noticeLine = pickNotice ? <p role="status" className="rounded-lg bg-warning/15 px-2 py-1 text-xs font-semibold text-foreground">{pickNotice}</p> : null;
 
   const handleNext = () => {
     if (afMode) { afNext(); return; }
@@ -1433,18 +1484,23 @@ function FairTurns() {
       <Button size="sm" variant={afMode ? "default" : "outline"} className="h-6 rounded-md px-2 text-xs font-bold" onClick={() => switchMode(true)} title="Automatic Fluency">Automatic Fluency</Button>
       {afMode && (
         <>
+          <span className="font-semibold text-muted-foreground">Students:</span>
           {([2, 3] as const).map((n) => (
             <Button key={n} size="sm" variant={afCount === n ? "default" : "outline"} className="h-6 min-w-8 rounded-md px-2 text-xs font-bold"
               onClick={() => { setAfCount(n); setAfQueue([]); setAfIndex(-1); setAfSkipped([]); }} aria-label={`${n} students`}>
               {n}
             </Button>
           ))}
+          {([30, 45] as const).map((n) => (
+            <Button key={`s${n}`} size="sm" variant={afSeconds === n ? "default" : "outline"} className="h-6 min-w-10 rounded-md px-2 text-xs font-bold"
+              onClick={() => setAfSeconds(n)} aria-label={`${n} seconds per turn`}>{n}s</Button>
+          ))}
           <label className="flex items-center gap-1 font-semibold text-muted-foreground">
-            <input type="number" min={30} max={600} value={afSeconds}
+            <input type="number" min={10} max={600} value={afSeconds}
               onKeyDown={(e) => e.stopPropagation()}
               onChange={(e) => {
                 const v = Math.round(Number(e.target.value));
-                if (Number.isFinite(v)) setAfSeconds(Math.min(600, Math.max(30, v)));
+                if (Number.isFinite(v)) setAfSeconds(Math.min(600, Math.max(10, v)));
               }}
               className="h-6 w-14 rounded-md border border-input bg-background px-1 text-xs text-foreground" aria-label="Automatic Fluency seconds" />s
           </label>
@@ -1473,11 +1529,13 @@ function FairTurns() {
         />
         <Button size="sm" className="rounded-lg" onClick={addStudent}>Add</Button>
       </div>
+      {noticeLine}
       <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto">
         {students.map((s) => (
           <li key={s.id} className="flex items-center gap-2 rounded-lg bg-secondary px-2 py-1 text-sm font-semibold text-secondary-foreground">
-            <button onClick={() => toggleAbsent(s.id)} title={isAbsent(s) ? "Mark present today" : "Mark absent today"}
+            <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}
               className={`truncate text-left ${isAbsent(s) ? "line-through opacity-50" : ""}`}>{s.name}</button>
+            {absenceButton(s, true)}
             {s.afWeek === week && <span className="text-[10px] font-bold text-primary">AF ✓</span>}
             <Tally count={s.total} className="flex-1 text-foreground/70" />
             {s.skippedThisRound ? (
@@ -1502,6 +1560,7 @@ function FairTurns() {
         </Button>
         <p className="min-w-0 flex-1 truncate text-right text-sm font-extrabold">{activeClassName}</p>
       </div>
+      {noticeLine}
       <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-1" aria-label="Tally marks today">
         {students.map((s) => {
           const absent = isAbsent(s);
@@ -1509,7 +1568,8 @@ function FairTurns() {
           return (
             <li key={s.id} className={`grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card"} ${absent ? "opacity-50" : ""}`}>
               <span className="flex min-w-0 items-center gap-1">
-                <span className={`truncate font-bold ${absent ? "line-through" : ""}`} title={s.name}>{s.name}</span>
+                <button type="button" onClick={() => manualPick(s.id)} className={`truncate text-left font-bold ${absent ? "line-through" : ""}`} title={`Pick ${s.name}`}>{s.name}</button>
+                {absenceButton(s, true)}
                 {absent && <span className="shrink-0 text-[10px] font-semibold">absent</span>}
                 {s.afWeek === week && <span className="shrink-0 text-[10px] font-bold">AF ✓</span>}
               </span>
@@ -1793,6 +1853,8 @@ function FairTurns() {
             <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
               Roster
             </h2>
+            <p className="text-xs text-muted-foreground">Tap a name to pick that student · tap the person icon to mark absent/present.</p>
+            {noticeLine}
             <ul className="flex flex-wrap gap-2">
               {students.map((s) => {
                 const isCurrent = s.id === currentId;
@@ -1809,7 +1871,8 @@ function FairTurns() {
                     className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-base font-semibold transition-colors ${cls}`}
                   >
                     {s.doneThisRound && !isCurrent && (s.skippedThisRound ? <span aria-label="Didn't participate" className="text-muted-foreground">✗</span> : <span aria-hidden>✓</span>)}
-                    <button onClick={() => toggleAbsent(s.id)} title={isAbsent(s) ? "Absent today — tap to mark present" : "Tap to mark absent today"}>{s.name}</button>
+                    <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}>{s.name}</button>
+                    {absenceButton(s)}
                     {s.afWeek === week && <span className="text-xs font-bold">AF ✓</span>}
                     <Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-foreground/70"} />
                   </li>
