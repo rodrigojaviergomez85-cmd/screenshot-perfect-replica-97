@@ -822,7 +822,6 @@ function FairTurns() {
     clearSkipUndo();
     setAfMode(af);
     // Keep the AF cycle (queue + last pick): leaving and returning to AF must not reopen it.
-    if (af && currentId) setAfLast((prev) => prev ?? currentId);
     setAfIndex(-1); setAfSkipped([]);
     setCurrentId(null);
     setTimerRunning(false);
@@ -906,32 +905,29 @@ function FairTurns() {
 
   const canSkip = afMode
     ? !!current && students.some((s) => s.id === current.id) && !afSkipped.includes(current.id)
-    : !!current && students.some((s) => s.id === current.id && !s.skippedThisRound);
+    : !!current && students.some((s) => s.id === current.id);
 
   const handleSkip = () => {
     if (afMode) { afSkip(); return; }
     if (!current) return;
     const target = students.find((s) => s.id === current.id);
-    if (!target || target.skippedThisRound) return;
+    if (!target) return;
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     lastNextAt.current = now;
-    setSkipUndo({ students, currentId, lastPicked, remaining, activeTurnSeconds, timerRunning, timeUp, round, banner });
+    setSkipUndo({ students, currentId, lastPicked, remaining, activeTurnSeconds, timerRunning, timeUp, round, banner, turnFirst });
     if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
     skipUndoTimer.current = window.setTimeout(() => {
       setSkipUndo(null);
       skipUndoTimer.current = null;
     }, 5000);
-    const counted = target.doneThisRound;
+    // Revert only this turn: its tally always; its round only if this turn earned it.
     const next = students.map((s) =>
       s.id === target.id
-        ? {
-            ...s,
-            doneThisRound: true,
-            skippedThisRound: true,
-            total: counted ? Math.max(0, s.total - 1) : s.total,
-            roundsCompleted: counted ? Math.max(0, s.roundsCompleted - 1) : s.roundsCompleted,
-          }
+        ? turnFirst
+          ? { ...s, doneThisRound: true, skippedThisRound: true, total: Math.max(0, s.total - 1),
+              roundsCompleted: Math.max(0, s.roundsCompleted - 1) }
+          : { ...s, total: Math.max(0, s.total - 1) }
         : s,
     );
     setStudents(next);
@@ -939,6 +935,7 @@ function FairTurns() {
     const picked = choosePick(next, false, null);
     if (!picked) {
       setCurrentId(null);
+      setTurnFirst(false);
       setTimerRunning(false);
       setTimeUp(false);
       return;
@@ -958,8 +955,10 @@ function FairTurns() {
     setTimeUp(skipUndo.timeUp);
     setRound(skipUndo.round);
     setBanner(skipUndo.banner);
+    setTurnFirst(skipUndo.turnFirst);
     if (skipUndo.af) {
       setAfQueue(skipUndo.af.queue); setAfIndex(skipUndo.af.index); setAfSkipped(skipUndo.af.skipped);
+      setAfLast(skipUndo.af.last);
     }
     if (!skipUndo.students.every((s) => s.doneThisRound)) bannerShownForRound.current = null;
     clearSkipUndo();
