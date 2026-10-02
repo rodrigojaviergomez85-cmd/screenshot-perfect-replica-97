@@ -824,7 +824,7 @@ function FairTurns() {
       lastNextAt.current = now;
       clearSkipUndo();
       setPickNotice(null);
-      afCommit(id, phase);
+      afCommit(id, phase, reset);
       return;
     }
     lastNextAt.current = now;
