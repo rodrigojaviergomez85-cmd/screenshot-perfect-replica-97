@@ -46,7 +46,9 @@ type Screen = "home" | "setup" | "class" | "summary";
 const CLASS_STORAGE_KEY = "fair-turns-class"; // legacy single-class key, migrated once
 const CLASSES_STORAGE_KEY = "fair-turns-classes";
 
-type SavedClass = { id: string; name: string; day: string; round: number; students: Student[]; updatedAt: number };
+/** Automatic Fluency cycle saved per class; only valid within its week. */
+type SavedAf = { week: string; queue: string[]; lastId: string | null };
+type SavedClass = { id: string; name: string; day: string; round: number; students: Student[]; updatedAt: number; af?: SavedAf };
 
 function normalizeStudents(raw: unknown): Student[] {
   if (!Array.isArray(raw)) return [];
@@ -60,14 +62,27 @@ function normalizeStudents(raw: unknown): Student[] {
     }));
 }
 
+function normalizeAf(raw: unknown): SavedAf | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const a = raw as Partial<SavedAf>;
+  if (typeof a.week !== "string") return undefined;
+  return {
+    week: a.week,
+    queue: Array.isArray(a.queue) ? a.queue.filter((x): x is string => typeof x === "string") : [],
+    lastId: typeof a.lastId === "string" ? a.lastId : null,
+  };
+}
+
 function normalizeClass(raw: unknown): SavedClass | null {
   if (!raw || typeof raw !== "object") return null;
   const c = raw as Partial<SavedClass>;
   if (typeof c.id !== "string" || typeof c.name !== "string") return null;
+  const af = normalizeAf(c.af);
   return {
     id: c.id, name: c.name.slice(0, 60), day: typeof c.day === "string" ? c.day : "",
     round: Number.isInteger(c.round) && (c.round ?? 0) > 0 ? c.round! : 1,
     students: normalizeStudents(c.students), updatedAt: Number(c.updatedAt) || 0,
+    ...(af ? { af } : {}),
   };
 }
 
@@ -349,6 +364,10 @@ function FairTurns() {
   const [afQueue, setAfQueue] = useState<string[]>([]);
   const [afIndex, setAfIndex] = useState(-1);
   const [afSkipped, setAfSkipped] = useState<string[]>([]);
+  /** Last AF pick, kept per class so a reload never repeats it immediately at a cycle change. */
+  const [afLast, setAfLast] = useState<string | null>(null);
+  /** Normal mode: whether the current turn earned the student's round (first real turn this round). */
+  const [turnFirst, setTurnFirst] = useState(false);
   const afPrevWeek = useRef(new Map<string, string | undefined>());
 
   const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
@@ -366,7 +385,8 @@ function FairTurns() {
   const [skipUndo, setSkipUndo] = useState<{
     students: Student[]; currentId: string | null; lastPicked: Student | null; remaining: number;
     activeTurnSeconds: number; timerRunning: boolean; timeUp: boolean; round: number; banner: RoundBanner | null;
-    af?: { queue: string[]; index: number; skipped: string[] };
+    turnFirst: boolean;
+    af?: { queue: string[]; index: number; skipped: string[]; last: string | null };
   } | null>(null);
   const skipUndoTimer = useRef<number | null>(null);
   const bannerShownForRound = useRef<number | null>(null);
@@ -462,10 +482,11 @@ function FairTurns() {
   // Keep the active class entry in sync with live progress.
   useEffect(() => {
     if (!loadedClassId || screen === "home" || (screen === "setup" && setupMode === "new")) return;
+    const af: SavedAf = { week, queue: afQueue, lastId: afLast };
     setClasses((prev) =>
-      prev.map((c) => (c.id === loadedClassId ? { ...c, students, round, day: classDay, updatedAt: Date.now() } : c)),
+      prev.map((c) => (c.id === loadedClassId ? { ...c, students, round, day: classDay, af, updatedAt: Date.now() } : c)),
     );
-  }, [loadedClassId, classDay, round, screen, setupMode, students]);
+  }, [loadedClassId, classDay, round, screen, setupMode, students, week, afQueue, afLast]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
@@ -484,7 +505,8 @@ function FairTurns() {
         setWeek(thisWeek);
         setStudents((prev) => prev.map((s) => ({ ...s, afWeek: undefined })));
         setClasses((prev) => prev.map((c) => ({ ...c, students: c.students.map((s) => ({ ...s, afWeek: undefined })) })));
-        setAfQueue([]); setAfIndex(-1); setAfSkipped([]);
+        setClasses((prev) => prev.map((c) => ({ ...c, af: { week: thisWeek, queue: [], lastId: null } })));
+        setAfQueue([]); setAfIndex(-1); setAfSkipped([]); setAfLast(null);
       }
       const today = localDay();
       if (today === classDay) return;
@@ -497,7 +519,8 @@ function FairTurns() {
       bannerShownForRound.current = null;
       setTimerRunning(false);
       setSkipUndo(null);
-      setAfQueue([]); setAfIndex(-1); setAfSkipped([]);
+      // The AF cycle lives for the whole week; a new day only clears today's turn.
+      setAfSkipped([]); setTurnFirst(false);
     };
     const id = window.setInterval(check, 30000);
     document.addEventListener("visibilitychange", check);
@@ -533,13 +556,18 @@ function FairTurns() {
     return () => window.clearInterval(id);
   }, [timerRunning]);
 
-  const enterClass = (list: Student[], classRound: number) => {
+  const enterClass = (list: Student[], classRound: number, savedAf?: SavedAf) => {
     clearSkipUndo();
     setStudents(list);
     setRound(classRound);
     setClassDay(localDay());
-    setWeek(weekKey());
-    setAfMode(false); setAfQueue([]); setAfIndex(-1); setAfSkipped([]);
+    const thisWeek = weekKey();
+    setWeek(thisWeek);
+    const ids = new Set(list.map((s) => s.id));
+    const af = savedAf && savedAf.week === thisWeek ? savedAf : null;
+    setAfMode(false); setAfIndex(-1); setAfSkipped([]); setTurnFirst(false);
+    setAfQueue(af ? af.queue.filter((x) => ids.has(x)) : []);
+    setAfLast(af && af.lastId && ids.has(af.lastId) ? af.lastId : null);
     setCurrentId(null);
     setLastPicked(null);
     setBanner(null);
@@ -570,7 +598,7 @@ function FairTurns() {
     const sameDay = c.day === localDay();
     setActiveClassId(c.id);
     setLoadedClassId(c.id);
-    enterClass(normalizeStudents(sameDay ? c.students : resetDay(c.students)), sameDay ? c.round : 1);
+    enterClass(normalizeStudents(sameDay ? c.students : resetDay(c.students)), sameDay ? c.round : 1, c.af);
   };
 
   const goHome = () => {
@@ -612,13 +640,17 @@ function FairTurns() {
 
   const commitPick = useCallback(
     (picked: Student, startsNewRound = false) => {
+      // A round counts at most once per student per round; extra manual turns only add a tally.
+      const first = startsNewRound || !picked.doneThisRound || !!picked.skippedThisRound;
+      setTurnFirst(first);
       setCurrentId(picked.id);
       setLastPicked({ ...picked, total: picked.total + 1 });
       setStudents((prev) => {
         const next = prev.map((s) => {
           const base = startsNewRound ? { ...s, doneThisRound: false, skippedThisRound: false } : s;
           return s.id === picked.id
-            ? { ...base, doneThisRound: true, total: s.total + 1, roundsCompleted: s.roundsCompleted + 1 }
+            ? { ...base, doneThisRound: true, skippedThisRound: false, total: s.total + 1,
+                roundsCompleted: s.roundsCompleted + (first ? 1 : 0) }
             : base;
         });
         return next;
@@ -722,7 +754,9 @@ function FairTurns() {
    * current cycle; nobody repeats until the other present students had a turn, and the current student is
    * avoided when someone else is available.
    */
-  const afEligible = (list: Student[], curId: string | null): { phase: "fresh" | "cycle"; ids: string[]; reset: boolean } => {
+  const afEligible = (list: Student[], curIdIn: string | null): { phase: "fresh" | "cycle"; ids: string[]; reset: boolean } => {
+    // With no student on turn (e.g. after reload or a mode switch), avoid repeating the last AF pick.
+    const curId = curIdIn ?? afLast;
     const present = list.filter((s) => s.absentDay !== classDay);
     const fresh = present.filter((s) => s.afWeek !== week && s.id !== curId);
     if (fresh.length > 0) return { phase: "fresh", ids: fresh.map((s) => s.id), reset: false };
@@ -742,7 +776,9 @@ function FairTurns() {
   const afCommit = (id: string, _phase: "fresh" | "cycle", reset = false) => {
     // Every AF turn (fresh or cycle) counts toward the current cycle, so present students
     // are all visited before anyone repeats.
-    setAfQueue(reset ? [id] : [...afQueue.filter((x) => x !== id), id]);
+    const ids = new Set(students.map((s) => s.id));
+    setAfQueue(reset ? [id] : [...afQueue.filter((x) => x !== id && ids.has(x)), id]);
+    setAfLast(id);
     setAfSkipped([]);
     showAfPick(students, id);
   };
@@ -764,15 +800,17 @@ function FairTurns() {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     lastNextAt.current = now;
-    setSkipUndo({ students, currentId, lastPicked, remaining, activeTurnSeconds, timerRunning, timeUp, round, banner,
-      af: { queue: afQueue, index: afIndex, skipped: afSkipped } });
+    setSkipUndo({ students, currentId, lastPicked, remaining, activeTurnSeconds, timerRunning, timeUp, round, banner, turnFirst,
+      af: { queue: afQueue, index: afIndex, skipped: afSkipped, last: afLast } });
     if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
     skipUndoTimer.current = window.setTimeout(() => { setSkipUndo(null); skipUndoTimer.current = null; }, 5000);
     const id = current.id;
     setStudents(students.map((s) =>
       s.id === id ? { ...s, total: Math.max(0, s.total - 1), afWeek: afPrevWeek.current.get(id) } : s,
     ));
-    setAfQueue(afQueue.filter((x) => x !== id));
+    const nextQueue = afQueue.filter((x) => x !== id);
+    setAfQueue(nextQueue);
+    setAfLast(nextQueue[nextQueue.length - 1] ?? null);
     setAfSkipped([...afSkipped, id]);
     setCurrentId(null);
     setTimerRunning(false);
@@ -783,7 +821,9 @@ function FairTurns() {
     if (af === afMode) return;
     clearSkipUndo();
     setAfMode(af);
-    setAfQueue([]); setAfIndex(-1); setAfSkipped([]);
+    // Keep the AF cycle (queue + last pick): leaving and returning to AF must not reopen it.
+    if (af && currentId) setAfLast((prev) => prev ?? currentId);
+    setAfIndex(-1); setAfSkipped([]);
     setCurrentId(null);
     setTimerRunning(false);
     setTimeUp(false);
