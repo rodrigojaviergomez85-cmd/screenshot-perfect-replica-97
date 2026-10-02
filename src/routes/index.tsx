@@ -345,7 +345,6 @@ function FairTurns() {
   const [setupMode, setSetupMode] = useState<"new" | "edit">("new");
   const [week, setWeek] = useState(() => weekKey());
   const [afMode, setAfMode] = useState(false);
-  const [afCount, setAfCount] = useState<2 | 3>(2);
   const [afSeconds, setAfSeconds] = useState(30);
   const [afQueue, setAfQueue] = useState<string[]>([]);
   const [afIndex, setAfIndex] = useState(-1);
@@ -416,8 +415,6 @@ function FairTurns() {
           setActiveTurnSeconds(seconds);
         }
       }
-      const savedAfCount = window.localStorage.getItem(AF_COUNT_KEY);
-      if (savedAfCount === "3") setAfCount(3);
       const savedAfSeconds = Number(window.localStorage.getItem(AF_SECONDS_KEY));
       if (Number.isInteger(savedAfSeconds) && savedAfSeconds >= 10 && savedAfSeconds <= 600) setAfSeconds(savedAfSeconds);
       const savedClasses = window.localStorage.getItem(CLASSES_STORAGE_KEY);
@@ -455,12 +452,12 @@ function FairTurns() {
       window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(coachMessages));
       window.localStorage.setItem(SHOW_MESSAGES_STORAGE_KEY, String(showCoachMessages));
       window.localStorage.setItem(TIMER_STORAGE_KEY, String(turnSeconds));
-      window.localStorage.setItem(AF_COUNT_KEY, String(afCount));
+      window.localStorage.removeItem(AF_COUNT_KEY);
       window.localStorage.setItem(AF_SECONDS_KEY, String(afSeconds));
     } catch {
       /* The app remains fully usable when browser storage is unavailable. */
     }
-  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, turnSeconds, afCount, afSeconds]);
+  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, turnSeconds, afSeconds]);
 
   // Keep the active class entry in sync with live progress.
   useEffect(() => {
@@ -719,52 +716,49 @@ function FairTurns() {
     startAfTimer();
   };
 
-  /** Rebuild the rest of an AF session: keep used ids, drop absent/removed, fill with eligible students (not-yet-AF first). */
-  const planAf = (list: Student[], queue: string[], fromIndex: number): string[] => {
-    const used = queue.slice(0, fromIndex);
-    const valid = new Map(list.filter((s) => s.absentDay !== classDay).map((s) => [s.id, s]));
-    const planned = queue.slice(fromIndex).filter((id) => valid.has(id) && !used.includes(id));
-    const others = [...valid.values()].filter((s) => !used.includes(s.id) && !planned.includes(s.id));
-    const fresh = (id: string) => valid.get(id)?.afWeek !== week;
-    const pool = [
-      ...planned.filter(fresh), ...shuffled(others.filter((s) => s.afWeek !== week)).map((s) => s.id),
-      ...planned.filter((id) => !fresh(id)), ...shuffled(others.filter((s) => s.afWeek === week)).map((s) => s.id),
-    ];
-    return [...used, ...pool].slice(0, Math.max(afCount, used.length));
+  /**
+   * AF eligibility (no session limit). Strict weekly priority: while any present student has not done AF
+   * this week, only they are eligible. Afterwards, fair cycles: afQueue holds ids already picked in the
+   * current cycle; nobody repeats until the other present students had a turn, and the current student is
+   * avoided when someone else is available.
+   */
+  const afEligible = (list: Student[], curId: string | null): { phase: "fresh" | "cycle"; ids: string[]; reset: boolean } => {
+    const present = list.filter((s) => s.absentDay !== classDay);
+    const fresh = present.filter((s) => s.afWeek !== week && s.id !== curId);
+    if (fresh.length > 0) return { phase: "fresh", ids: fresh.map((s) => s.id), reset: false };
+    let reset = false;
+    let pool = present.filter((s) => !afQueue.includes(s.id));
+    if (pool.length === 0) { pool = present; reset = true; }
+    const withoutCurrent = pool.filter((s) => s.id !== curId);
+    if (withoutCurrent.length > 0) pool = withoutCurrent;
+    else if (!reset) {
+      // Only the current student is left in this cycle: start a new cycle, still avoiding the current one.
+      const alt = present.filter((s) => s.id !== curId);
+      if (alt.length > 0) { pool = alt; reset = true; }
+    }
+    return { phase: "cycle", ids: pool.map((s) => s.id), reset };
   };
 
-  /** Automatic Fluency: weekly-fair picks (not-yet-AF first), no repeats within a session. */
+  const afCommit = (id: string, phase: "fresh" | "cycle", reset = false) => {
+    if (phase === "cycle") setAfQueue(reset ? [id] : [...afQueue.filter((x) => x !== id), id]);
+    setAfSkipped([]);
+    showAfPick(students, id);
+  };
+
+  /** Automatic Fluency: continues until the coach switches back to Normal. */
   const afNext = () => {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
-    let index = afIndex + 1;
-    let skipped = afSkipped;
-    const inSession = afIndex >= 0 && index < afCount;
-    let queue = inSession ? planAf(students, afQueue, index) : [];
-    if (inSession && index >= queue.length) {
-      // No distinct eligible candidate left in this session: end it cleanly, pick nobody.
-      lastNextAt.current = now;
-      clearSkipUndo();
-      setAfQueue(queue); setAfIndex(afCount);
-      setCurrentId(null);
-      setTimerRunning(false);
-      setTimeUp(false);
-      return;
-    }
-    if (!inSession) {
-      queue = planAf(students, [], 0);
-      index = 0;
-      skipped = [];
-      if (queue.length === 0) return;
-    }
+    const { phase, ids, reset } = afEligible(students, currentId);
+    if (ids.length === 0) return;
     lastNextAt.current = now;
     clearSkipUndo();
-    setAfQueue(queue); setAfIndex(index); setAfSkipped(skipped);
-    showAfPick(students, queue[index]!);
+    afCommit(ids[Math.floor(Math.random() * ids.length)]!, phase, reset);
   };
 
+  /** Skip reverts only the skipped turn and leaves no current student until another explicit action. */
   const afSkip = () => {
-    if (!current || afQueue[afIndex] !== current.id || afSkipped.includes(current.id)) return;
+    if (!current || afSkipped.includes(current.id)) return;
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     lastNextAt.current = now;
@@ -773,22 +767,14 @@ function FairTurns() {
     if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
     skipUndoTimer.current = window.setTimeout(() => { setSkipUndo(null); skipUndoTimer.current = null; }, 5000);
     const id = current.id;
-    const next = students.map((s) =>
+    setStudents(students.map((s) =>
       s.id === id ? { ...s, total: Math.max(0, s.total - 1), afWeek: afPrevWeek.current.get(id) } : s,
-    );
+    ));
+    setAfQueue(afQueue.filter((x) => x !== id));
     setAfSkipped([...afSkipped, id]);
-    const nextIndex = afIndex + 1;
-    const queue = nextIndex < afCount ? planAf(next, afQueue, nextIndex) : afQueue.slice(0, nextIndex);
-    setAfQueue(queue);
-    setAfIndex(nextIndex < queue.length ? nextIndex : afCount);
-    if (nextIndex < queue.length) {
-      showAfPick(next, queue[nextIndex]!);
-    } else {
-      setStudents(next);
-      setCurrentId(null);
-      setTimerRunning(false);
-      setTimeUp(false);
-    }
+    setCurrentId(null);
+    setTimerRunning(false);
+    setTimeUp(false);
   };
 
   const switchMode = (af: boolean) => {
@@ -826,19 +812,17 @@ function FairTurns() {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     if (afMode) {
-      const inSession = afIndex >= 0 && afIndex + 1 < afCount;
-      const used = inSession ? afQueue.slice(0, afIndex + 1) : [];
-      if (used.includes(id)) { notify(`${target.name} already spoke in this AF session.`); return; }
-      if (target.afWeek === week && presentStudents.some((s) => s.afWeek !== week && !used.includes(s.id))) {
-        notify(`${target.name} already did AF this week — pick someone who hasn't yet.`);
+      const { phase, ids } = afEligible(students, currentId);
+      if (!ids.includes(id)) {
+        notify(phase === "fresh"
+          ? `${target.name} already did AF this week — pick someone who hasn't yet.`
+          : `${target.name} already had a turn — give the others a turn first.`);
         return;
       }
       lastNextAt.current = now;
       clearSkipUndo();
       setPickNotice(null);
-      setAfQueue([...used, id]); setAfIndex(used.length);
-      if (!inSession) setAfSkipped([]);
-      showAfPick(students, id);
+      afCommit(id, phase);
       return;
     }
     lastNextAt.current = now;
@@ -879,7 +863,7 @@ function FairTurns() {
   };
 
   const canSkip = afMode
-    ? !!current && afQueue[afIndex] === current.id && !afSkipped.includes(current.id)
+    ? !!current && students.some((s) => s.id === current.id) && !afSkipped.includes(current.id)
     : !!current && students.some((s) => s.id === current.id && !s.skippedThisRound);
 
   const handleSkip = () => {
@@ -1484,13 +1468,6 @@ function FairTurns() {
       <Button size="sm" variant={afMode ? "default" : "outline"} className="h-6 rounded-md px-2 text-xs font-bold" onClick={() => switchMode(true)} title="Automatic Fluency">Automatic Fluency</Button>
       {afMode && (
         <>
-          <span className="font-semibold text-muted-foreground">Students:</span>
-          {([2, 3] as const).map((n) => (
-            <Button key={n} size="sm" variant={afCount === n ? "default" : "outline"} className="h-6 min-w-8 rounded-md px-2 text-xs font-bold"
-              onClick={() => { setAfCount(n); setAfQueue([]); setAfIndex(-1); setAfSkipped([]); }} aria-label={`${n} students`}>
-              {n}
-            </Button>
-          ))}
           {([30, 45] as const).map((n) => (
             <Button key={`s${n}`} size="sm" variant={afSeconds === n ? "default" : "outline"} className="h-6 min-w-10 rounded-md px-2 text-xs font-bold"
               onClick={() => setAfSeconds(n)} aria-label={`${n} seconds per turn`}>{n}s</Button>
@@ -1509,10 +1486,7 @@ function FairTurns() {
     </div>
   );
 
-  const afEnded = afMode && !current && afIndex >= afCount;
-  const afProgress = afEnded ? "AF session ended · NEXT starts a new one" : afMode
-    ? `AF ${Math.min(afIndex + 1, afQueue.length)}/${afQueue.length || afCount} · ${afSeconds}s`
-    : null;
+  const afProgress = afMode ? `AF · ${afSeconds}s` : null;
 
   const rosterPanel = (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
