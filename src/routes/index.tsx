@@ -1,3 +1,4 @@
+import { nextMemory, pickNormal, type NormalMemory } from "@/lib/fair-pick";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -48,7 +49,9 @@ const CLASSES_STORAGE_KEY = "fair-turns-classes";
 
 /** Automatic Fluency cycle saved per class; only valid within its week. */
 type SavedAf = { week: string; queue: string[]; lastId: string | null };
-type SavedClass = { id: string; name: string; day: string; round: number; students: Student[]; updatedAt: number; af?: SavedAf };
+/** Normal-round order memory, valid only for its local day. */
+type SavedNormal = { day: string; last: string | null; avoid: string | null };
+type SavedClass = { id: string; name: string; day: string; round: number; students: Student[]; updatedAt: number; af?: SavedAf; normal?: SavedNormal };
 
 function normalizeStudents(raw: unknown): Student[] {
   if (!Array.isArray(raw)) return [];
@@ -78,11 +81,16 @@ function normalizeClass(raw: unknown): SavedClass | null {
   const c = raw as Partial<SavedClass>;
   if (typeof c.id !== "string" || typeof c.name !== "string") return null;
   const af = normalizeAf(c.af);
+  const n = c.normal as Partial<SavedNormal> | undefined;
+  const normal = n && typeof n === "object" && typeof n.day === "string"
+    ? { day: n.day, last: typeof n.last === "string" ? n.last : null, avoid: typeof n.avoid === "string" ? n.avoid : null }
+    : undefined;
   return {
     id: c.id, name: c.name.slice(0, 60), day: typeof c.day === "string" ? c.day : "",
     round: Number.isInteger(c.round) && (c.round ?? 0) > 0 ? c.round! : 1,
     students: normalizeStudents(c.students), updatedAt: Number(c.updatedAt) || 0,
     ...(af ? { af } : {}),
+    ...(normal ? { normal } : {}),
   };
 }
 
@@ -368,6 +376,8 @@ function FairTurns() {
   const [afLast, setAfLast] = useState<string | null>(null);
   /** Normal mode: whether the current turn earned the student's round (first real turn this round). */
   const [turnFirst, setTurnFirst] = useState(false);
+  /** Normal mode order memory (per class, per day): last pick and the previous round's closer. */
+  const [normalMem, setNormalMem] = useState<NormalMemory>({ last: null, avoid: null });
   const afPrevWeek = useRef(new Map<string, string | undefined>());
 
   const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
@@ -386,6 +396,7 @@ function FairTurns() {
     students: Student[]; currentId: string | null; lastPicked: Student | null; remaining: number;
     activeTurnSeconds: number; timerRunning: boolean; timeUp: boolean; round: number; banner: RoundBanner | null;
     turnFirst: boolean;
+    normalMem?: NormalMemory;
     af?: { queue: string[]; index: number; skipped: string[]; last: string | null };
   } | null>(null);
   const skipUndoTimer = useRef<number | null>(null);
@@ -483,10 +494,11 @@ function FairTurns() {
   useEffect(() => {
     if (!loadedClassId || screen === "home" || (screen === "setup" && setupMode === "new")) return;
     const af: SavedAf = { week, queue: afQueue, lastId: afLast };
+    const normal: SavedNormal = { day: classDay, ...normalMem };
     setClasses((prev) =>
-      prev.map((c) => (c.id === loadedClassId ? { ...c, students, round, day: classDay, af, updatedAt: Date.now() } : c)),
+      prev.map((c) => (c.id === loadedClassId ? { ...c, students, round, day: classDay, af, normal, updatedAt: Date.now() } : c)),
     );
-  }, [loadedClassId, classDay, round, screen, setupMode, students, week, afQueue, afLast]);
+  }, [loadedClassId, classDay, round, screen, setupMode, students, week, afQueue, afLast, normalMem]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
@@ -521,6 +533,7 @@ function FairTurns() {
       setSkipUndo(null);
       // The AF cycle lives for the whole week; a new day only clears today's turn.
       setAfSkipped([]); setTurnFirst(false);
+      setNormalMem({ last: null, avoid: null });
     };
     const id = window.setInterval(check, 30000);
     document.addEventListener("visibilitychange", check);
@@ -556,7 +569,7 @@ function FairTurns() {
     return () => window.clearInterval(id);
   }, [timerRunning]);
 
-  const enterClass = (list: Student[], classRound: number, savedAf?: SavedAf) => {
+  const enterClass = (list: Student[], classRound: number, savedAf?: SavedAf, savedNormal?: SavedNormal) => {
     clearSkipUndo();
     setStudents(list);
     setRound(classRound);
@@ -568,6 +581,11 @@ function FairTurns() {
     setAfMode(false); setAfIndex(-1); setAfSkipped([]); setTurnFirst(false);
     setAfQueue(af ? af.queue.filter((x) => ids.has(x)) : []);
     setAfLast(af && af.lastId && ids.has(af.lastId) ? af.lastId : null);
+    const nm = savedNormal && savedNormal.day === localDay() ? savedNormal : null;
+    setNormalMem({
+      last: nm?.last && ids.has(nm.last) ? nm.last : null,
+      avoid: nm?.avoid && ids.has(nm.avoid) ? nm.avoid : null,
+    });
     setCurrentId(null);
     setLastPicked(null);
     setBanner(null);
@@ -598,7 +616,7 @@ function FairTurns() {
     const sameDay = c.day === localDay();
     setActiveClassId(c.id);
     setLoadedClassId(c.id);
-    enterClass(normalizeStudents(sameDay ? c.students : resetDay(c.students)), sameDay ? c.round : 1, c.af);
+    enterClass(normalizeStudents(sameDay ? c.students : resetDay(c.students)), sameDay ? c.round : 1, c.af, c.normal);
   };
 
   const goHome = () => {
@@ -643,6 +661,7 @@ function FairTurns() {
       // A round counts at most once per student per round; extra manual turns only add a tally.
       const first = startsNewRound || !picked.doneThisRound || !!picked.skippedThisRound;
       setTurnFirst(first);
+      setNormalMem((m) => nextMemory(m, picked.id, startsNewRound));
       setCurrentId(picked.id);
       setLastPicked({ ...picked, total: picked.total + 1 });
       setStudents((prev) => {
@@ -720,15 +739,10 @@ function FairTurns() {
   };
 
   /** Shared pick rule for NEXT and Skip: no repeats in a round; first pick of a new round avoids the last picked. */
-  const choosePick = (list: Student[], newRound: boolean, lastId: string | null): Student | null => {
+  const choosePick = (list: Student[], newRound: boolean): Student | null => {
     const present = list.filter((s) => s.absentDay !== classDay);
-    let pool = newRound ? present : present.filter((s) => !s.doneThisRound);
-    if (newRound && present.length >= 2 && lastId) {
-      const filtered = pool.filter((s) => s.id !== lastId);
-      if (filtered.length > 0) pool = filtered;
-    }
-    if (pool.length === 0) return null;
-    return pool[Math.floor(Math.random() * pool.length)] ?? null;
+    const lastId = normalMem.last ?? lastPicked?.id ?? null;
+    return pickNormal(present, newRound, lastId, newRound ? lastId : normalMem.avoid);
   };
 
   const startAfTimer = () => {
@@ -891,7 +905,7 @@ function FairTurns() {
     if (now - lastNextAt.current < 300) return;
     if (students.length === 0) return;
     const startsNewRound = presentStudents.every((s) => s.doneThisRound);
-    const picked = choosePick(students, startsNewRound, lastPicked?.id ?? null);
+    const picked = choosePick(students, startsNewRound);
     if (!picked) return;
     lastNextAt.current = now;
     clearSkipUndo();
@@ -915,7 +929,7 @@ function FairTurns() {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     lastNextAt.current = now;
-    setSkipUndo({ students, currentId, lastPicked, remaining, activeTurnSeconds, timerRunning, timeUp, round, banner, turnFirst });
+    setSkipUndo({ students, currentId, lastPicked, remaining, activeTurnSeconds, timerRunning, timeUp, round, banner, turnFirst, normalMem });
     if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
     skipUndoTimer.current = window.setTimeout(() => {
       setSkipUndo(null);
@@ -932,7 +946,7 @@ function FairTurns() {
     );
     setStudents(next);
     // Skip completes the current round if nobody is left; the next round starts only on NEXT.
-    const picked = choosePick(next, false, null);
+    const picked = choosePick(next, false);
     if (!picked) {
       setCurrentId(null);
       setTurnFirst(false);
@@ -956,6 +970,7 @@ function FairTurns() {
     setRound(skipUndo.round);
     setBanner(skipUndo.banner);
     setTurnFirst(skipUndo.turnFirst);
+    if (skipUndo.normalMem) setNormalMem(skipUndo.normalMem);
     if (skipUndo.af) {
       setAfQueue(skipUndo.af.queue); setAfIndex(skipUndo.af.index); setAfSkipped(skipUndo.af.skipped);
       setAfLast(skipUndo.af.last);
