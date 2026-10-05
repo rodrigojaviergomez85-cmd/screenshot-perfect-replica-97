@@ -186,16 +186,8 @@ export class SoundEngine {
 
   private render(id: EffectId, ctx: AudioContext, out: AudioNode, t: number): number {
     switch (id) {
-      case "aplausos": {
-        // Many overlapping hand claps that swell then fade.
-        const total = 2.2;
-        for (let i = 0; i < 90; i++) {
-          const at = Math.random() * total;
-          const env = Math.sin((at / total) * Math.PI);
-          this.burst(ctx, out, t + at, 0.06 + Math.random() * 0.04, 0.15 + env * 0.35, 900 + Math.random() * 1600, 0.8);
-        }
-        return total + 0.15;
-      }
+      case "aplausos":
+        return 0; // recorded clip; see CLIP_URLS
       case "correcto": {
         this.tone(ctx, out, "sine", 659.25, t, 0.25, 0.4);
         this.tone(ctx, out, "sine", 987.77, t + 0.12, 0.5, 0.4);
