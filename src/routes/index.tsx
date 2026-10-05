@@ -785,7 +785,12 @@ function FairTurns() {
     if (fresh.length > 0) return { phase: "fresh", ids: fresh.map((s) => s.id), reset: false };
     let reset = false;
     let pool = present.filter((s) => !afQueue.includes(s.id));
-    if (pool.length === 0) { pool = present; reset = true; }
+    if (pool.length === 0) {
+      // New cycle: skips expire, so anyone still without AF this week keeps priority.
+      const freshAll = present.filter((s) => s.afWeek !== week && s.id !== curId);
+      if (freshAll.length > 0) return { phase: "fresh", ids: freshAll.map((s) => s.id), reset: true };
+      pool = present; reset = true;
+    }
     const withoutCurrent = pool.filter((s) => s.id !== curId);
     if (withoutCurrent.length > 0) pool = withoutCurrent;
     else if (!reset) {
