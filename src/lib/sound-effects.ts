@@ -1,7 +1,8 @@
 /**
- * Built-in classroom sound effects synthesized locally with Web Audio.
- * No downloads, uploads or external services: every effect is generated in the browser.
+ * Built-in classroom sound effects played locally with Web Audio.
+ * Most are synthesized; Aplausos uses a CC0 recording bundled with the app (no third-party requests).
  */
+import applauseAsset from "@/assets/applause.mp3.asset.json";
 export const EFFECTS = [
   { id: "aplausos", label: "Aplausos", emoji: "👏" },
   { id: "correcto", label: "Correcto", emoji: "⭐" },
@@ -12,6 +13,17 @@ export const EFFECTS = [
 ] as const;
 
 export type EffectId = (typeof EFFECTS)[number]["id"];
+
+/** Effects backed by a recorded clip bundled with the app (see src/assets/ATTRIBUTION.md). */
+const CLIP_URLS: Partial<Record<EffectId, string>> = { aplausos: applauseAsset.url };
+
+export type ClipLoader = (ctx: AudioContext, url: string) => Promise<AudioBuffer>;
+
+const defaultLoadClip: ClipLoader = async (ctx, url) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`clip ${res.status}`);
+  return ctx.decodeAudioData(await res.arrayBuffer());
+};
 
 type Listener = (playing: EffectId | null) => void;
 
@@ -27,8 +39,12 @@ export class SoundEngine {
   private listeners = new Set<Listener>();
   /** Bumped by every play() and stop(); a play only renders if its token is still current. */
   private generation = 0;
+  private clips = new Map<string, Promise<AudioBuffer>>();
+  private readonly loadClip: ClipLoader;
 
-  constructor(private readonly createContext?: () => AudioContext) {}
+  constructor(private readonly createContext?: () => AudioContext, loadClip?: ClipLoader) {
+    this.loadClip = loadClip ?? defaultLoadClip;
+  }
 
   subscribe(fn: Listener) {
     this.listeners.add(fn);
@@ -98,13 +114,41 @@ export class SoundEngine {
       // A newer play or a stop happened while resuming: this click is obsolete.
       if (token !== this.generation) return;
     }
+    let clip: AudioBuffer | null = null;
+    const url = CLIP_URLS[id];
+    if (url) {
+      try { clip = await this.getClip(ctx, url); } catch { return; }
+      // Stop / newer click during fetch+decode: never play late.
+      if (token !== this.generation) return;
+    }
     this.bus = ctx.createGain();
     this.bus.connect(this.master);
     const t = ctx.currentTime + 0.02;
-    const dur = this.render(id, ctx, this.bus, t);
+    let dur: number;
+    if (clip) {
+      const s = ctx.createBufferSource();
+      s.buffer = clip;
+      s.connect(this.bus);
+      s.start(t);
+      this.nodes.push(s);
+      dur = clip.duration;
+    } else {
+      dur = this.render(id, ctx, this.bus, t);
+    }
     this.playing = id;
     this.emit();
     this.endTimer = setTimeout(() => this.stop(), dur * 1000 + 150);
+  }
+
+  /** Fetch + decode once and cache; a failed load is evicted so the next click retries. */
+  private getClip(ctx: AudioContext, url: string): Promise<AudioBuffer> {
+    let p = this.clips.get(url);
+    if (!p) {
+      p = this.loadClip(ctx, url);
+      this.clips.set(url, p);
+      p.catch(() => { if (this.clips.get(url) === p) this.clips.delete(url); });
+    }
+    return p;
   }
 
   private tone(ctx: AudioContext, out: AudioNode, type: OscillatorType, freq: number, start: number, len: number, peak: number) {
