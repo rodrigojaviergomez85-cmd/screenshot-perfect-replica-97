@@ -416,7 +416,11 @@ function FairTurns() {
   const isAbsent = (s: Student) => s.absentDay === classDay;
   const presentStudents = students.filter((s) => !isAbsent(s));
   const pending = presentStudents.filter((s) => !s.doneThisRound);
-  const doneCount = presentStudents.length - pending.length;
+  // doneThisRound = visited. A first-turn pending is not yet confirmed (unresolved); a skip is resolved
+  // but never a participation; an extra manual pending keeps the participation already earned this round.
+  const isUnresolved = (s: Student) => !!pend.normal && pend.normal.id === s.id && !!pend.normal.earnsRound;
+  const participatedThisRound = (s: Student) => s.doneThisRound && !s.skippedThisRound && !isUnresolved(s);
+  const doneCount = presentStudents.filter(participatedThisRound).length;
   const current = students.find((s) => s.id === currentId) ?? (currentId ? lastPicked : null);
   const activeMessages = useMemo(() => {
     return coachMessages.map((message) => message.trim()).filter(Boolean);
@@ -697,21 +701,32 @@ function FairTurns() {
     [turnSeconds, useTimer, classDay],
   );
 
-  const roundComplete = presentStudents.length > 0 && presentStudents.every((s) => s.doneThisRound);
+  // A round is complete only when every present student's turn is resolved (confirmed or skipped).
+  const roundComplete = presentStudents.length > 0 && presentStudents.every((s) => s.doneThisRound && !isUnresolved(s));
 
-  // Show the round-complete banner once per completed round. The banner never changes round data.
-  useEffect(() => {
-    if (screen !== "class" || !roundComplete) return;
-    if (bannerShownForRound.current === round) return;
-    bannerShownForRound.current = round;
+  /** Shows the "Round N complete" banner once per round number. Never changes round data. */
+  const showRoundBanner = (n: number) => {
+    if (bannerShownForRound.current === n) return false;
+    bannerShownForRound.current = n;
     if (showCoachMessages && messageQueue.current.length === 0 && activeMessages.length > 0) {
       messageQueue.current = shuffleMessages(activeMessages, lastCoachMessage.current);
     }
     const message = showCoachMessages ? (messageQueue.current.shift() ?? "") : "";
     if (message) lastCoachMessage.current = message;
-    setBanner({ round, message, exiting: false });
+    setBanner({ round: n, message, exiting: false });
+    return true;
+  };
+
+  useEffect(() => {
+    if (screen !== "class" || afMode || !roundComplete) return;
+    showRoundBanner(round);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roundComplete, screen, round]);
+  }, [roundComplete, screen, round, afMode]);
+
+  /** When NEXT/manual opens round N+1, the outgoing last turn resolves round N: announce it (once) instead of hiding. */
+  const onOpenNewRound = () => {
+    if (!showRoundBanner(round)) setBanner(null);
+  };
 
   useEffect(() => {
     if (!banner) return;
