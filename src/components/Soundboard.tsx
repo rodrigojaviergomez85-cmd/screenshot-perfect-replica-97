@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Square, Star, Trash2, Volume1, Volume2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Play, Plus, Square, Star, Trash2, Volume1, Volume2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EFFECTS, type EffectId } from "@/lib/sound-effects";
-import { sortLinks, validateYouTubeUrl, type MusicLink } from "@/lib/music-links";
+import { sortLinks, toEmbedUrl, validateYouTubeUrl, type MusicLink } from "@/lib/music-links";
 
 type Props = {
   playing: EffectId | null;
@@ -24,6 +24,14 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
   const [draft, setDraft] = useState<Draft | null>(null);
   const [undo, setUndo] = useState<{ link: MusicLink; index: number } | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // One embedded player at a time; it lives only while the soundboard is mounted.
+  const [nowPlaying, setNowPlaying] = useState<string | null>(null);
+  const playerRef = useRef<HTMLDivElement | null>(null);
+  const current = links.find((l) => l.id === nowPlaying) ?? null;
+  const embed = current ? toEmbedUrl(current.url) : null;
+  useEffect(() => {
+    if (nowPlaying) playerRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [nowPlaying]);
   useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
 
   const save = () => {
@@ -44,6 +52,7 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
   const remove = (link: MusicLink) => {
     const index = links.findIndex((l) => l.id === link.id);
     onLinksChange(links.filter((l) => l.id !== link.id));
+    if (nowPlaying === link.id) setNowPlaying(null);
     setUndo({ link, index });
     if (undoTimer.current) clearTimeout(undoTimer.current);
     undoTimer.current = setTimeout(() => setUndo(null), 5000);
@@ -131,7 +140,38 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
           {storageWarning && (
             <p role="alert" className="mb-1 text-xs font-semibold text-destructive">No se pudo guardar en este navegador; los cambios pueden perderse al recargar.</p>
           )}
-          <p className="mb-2 text-xs text-muted-foreground">Las canciones se abren en YouTube. Pausa y volumen se controlan allí.</p>
+          <p className="mb-2 text-xs text-muted-foreground">Pulsa una canción para verla aquí; usa los controles del video. Al salir del tablero, se detiene la música.</p>
+
+          {current && (
+            <div ref={playerRef} className="mb-2 rounded-xl border border-border bg-card p-2" aria-label={`Reproductor: ${current.name}`} role="region">
+              <div className="mb-1 flex items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-xs font-bold" title={current.name}>{current.name}</span>
+                <Button size="sm" variant="outline" className="h-7 shrink-0 rounded-lg px-2 text-xs font-bold" onClick={() => setNowPlaying(null)}>
+                  <X className="h-3.5 w-3.5" /> Cerrar reproductor
+                </Button>
+              </div>
+              {embed ? (
+                <div className="mx-auto w-full max-w-[400px]" style={{ minWidth: 200 }}>
+                  <iframe
+                    key={embed}
+                    src={embed}
+                    title={`YouTube: ${current.name}`}
+                    className="block aspect-video w-full rounded-lg border-0"
+                    style={{ minHeight: 200 }}
+                    allow="encrypted-media; picture-in-picture; fullscreen"
+                    allowFullScreen
+                    referrerPolicy="strict-origin-when-cross-origin"
+                  />
+                </div>
+              ) : (
+                <p className="text-xs font-semibold text-muted-foreground">Este enlace no se puede reproducir aquí.</p>
+              )}
+              <p className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
+                ¿No se reproduce? Algunos videos no permiten verse fuera de YouTube.
+                <a href={current.url} target="_blank" rel="noopener" className="font-bold text-primary underline">Abrir en YouTube</a>
+              </p>
+            </div>
+          )}
 
           {draft && (
             <form
@@ -185,15 +225,25 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
             <ul className="space-y-1">
               {sortLinks(links).map((l) => (
                 <li key={l.id} className="flex items-center gap-1 rounded-xl border border-border bg-card px-2 py-1.5">
-                  <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={l.name}>{l.name}</span>
+                  <button
+                    onClick={() => setNowPlaying(l.id)}
+                    aria-pressed={nowPlaying === l.id}
+                    aria-label={`Reproducir aquí ${l.name}`}
+                    title={`Reproducir aquí: ${l.name}`}
+                    className={`flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm font-semibold hover:bg-accent ${nowPlaying === l.id ? "text-primary" : ""}`}
+                  >
+                    <Play className="h-3.5 w-3.5 shrink-0 fill-current text-primary" aria-hidden />
+                    <span className="truncate">{l.name}</span>
+                  </button>
                   <a
                     href={l.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-xs font-bold text-primary hover:bg-accent"
+                    className="flex shrink-0 items-center rounded-md p-1 text-muted-foreground hover:bg-accent"
                     aria-label={`Abrir ${l.name} en YouTube`}
+                    title="Abrir en YouTube"
                   >
-                    <ExternalLink className="h-3.5 w-3.5" /> Abrir en YouTube
+                    <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                   <button
                     onClick={() => onLinksChange(links.map((x) => (x.id === l.id ? { ...x, favorite: !x.favorite } : x)))}

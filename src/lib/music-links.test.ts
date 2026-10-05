@@ -91,3 +91,15 @@ describe("sound prefs load/save", () => {
     expect(SOUND_PREFS_KEY).toBe("fair-participation-sounds-v1");
   });
 });
+
+import { toEmbedUrl } from "./music-links";
+describe("toEmbedUrl", () => {
+  it("builds embeds only from validated ids", () => {
+    expect(toEmbedUrl("https://youtu.be/dQw4w9WgXcQ")).toBe("https://www.youtube.com/embed/dQw4w9WgXcQ?playsinline=1&rel=0");
+    expect(toEmbedUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLabc123&t=5")).toBe("https://www.youtube.com/embed/dQw4w9WgXcQ?playsinline=1&rel=0&list=PLabc123");
+    expect(toEmbedUrl("https://www.youtube.com/shorts/dQw4w9WgXcQ")).toBe("https://www.youtube.com/embed/dQw4w9WgXcQ?playsinline=1&rel=0");
+    expect(toEmbedUrl("https://www.youtube.com/playlist?list=PLabc123")).toBe("https://www.youtube.com/embed/videoseries?playsinline=1&rel=0&list=PLabc123");
+    expect(toEmbedUrl("https://evil.com/watch?v=dQw4w9WgXcQ")).toBeNull();
+    expect(toEmbedUrl("javascript:alert(1)")).toBeNull();
+  });
+});
