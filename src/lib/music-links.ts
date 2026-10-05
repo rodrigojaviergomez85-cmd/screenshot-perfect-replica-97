@@ -1,0 +1,86 @@
+/** YouTube favorite links + effect volume, saved once per browser (shared by all classes). */
+export const SOUND_PREFS_KEY = "fair-participation-sounds-v1";
+
+export type MusicLink = { id: string; name: string; url: string; favorite: boolean; createdAt: number };
+export type SoundPrefs = { version: 1; volume: number; links: MusicLink[] };
+
+export const DEFAULT_SOUND_PREFS: SoundPrefs = { version: 1, volume: 0.7, links: [] };
+
+const HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"]);
+const VIDEO_ID = /^[A-Za-z0-9_-]{6,20}$/;
+const LIST_ID = /^[A-Za-z0-9_-]{2,64}$/;
+
+export type UrlResult = { ok: true; url: string } | { ok: false; error: string };
+
+export function validateYouTubeUrl(input: string): UrlResult {
+  const raw = input.trim();
+  if (!raw) return { ok: false, error: "Pega un enlace de YouTube." };
+  if (raw.length > 500) return { ok: false, error: "El enlace es demasiado largo." };
+  const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`;
+  let u: URL;
+  try {
+    u = new URL(withScheme);
+  } catch {
+    return { ok: false, error: "No parece un enlace válido." };
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return { ok: false, error: "Solo se permiten enlaces https de YouTube." };
+  if (u.username || u.password || u.port) return { ok: false, error: "Solo se permiten enlaces de YouTube." };
+  const host = u.hostname.toLowerCase();
+  if (!HOSTS.has(host)) return { ok: false, error: "Solo se permiten enlaces de youtube.com o youtu.be." };
+  const parts = u.pathname.split("/").filter(Boolean);
+  const v = u.searchParams.get("v");
+  const list = u.searchParams.get("list");
+  let valid = false;
+  if (host === "youtu.be") {
+    valid = parts.length === 1 && VIDEO_ID.test(parts[0]!);
+  } else if (parts[0] === "watch" && parts.length === 1) {
+    valid = (v !== null && VIDEO_ID.test(v)) || (v === null && list !== null && LIST_ID.test(list));
+  } else if (parts[0] === "playlist" && parts.length === 1) {
+    valid = list !== null && LIST_ID.test(list);
+  } else if (["shorts", "live", "embed"].includes(parts[0] ?? "") && parts.length === 2) {
+    valid = VIDEO_ID.test(parts[1]!);
+  }
+  if (!valid) return { ok: false, error: "Falta el video o la lista en el enlace de YouTube." };
+  u.protocol = "https:";
+  u.hash = "";
+  return { ok: true, url: u.toString() };
+}
+
+export function sortLinks(links: MusicLink[]): MusicLink[] {
+  return [...links].sort((a, b) => Number(b.favorite) - Number(a.favorite) || a.createdAt - b.createdAt);
+}
+
+/** Parses stored prefs defensively; anything malformed falls back to defaults item by item. */
+export function parseSoundPrefs(raw: string | null): SoundPrefs {
+  if (!raw) return { ...DEFAULT_SOUND_PREFS, links: [] };
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return { ...DEFAULT_SOUND_PREFS, links: [] };
+  }
+  if (!data || typeof data !== "object") return { ...DEFAULT_SOUND_PREFS, links: [] };
+  const d = data as { volume?: unknown; links?: unknown };
+  const volume = typeof d.volume === "number" && Number.isFinite(d.volume) ? Math.min(1, Math.max(0, d.volume)) : DEFAULT_SOUND_PREFS.volume;
+  const links: MusicLink[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(d.links)) {
+    for (const item of d.links.slice(0, 100)) {
+      if (!item || typeof item !== "object") continue;
+      const l = item as Record<string, unknown>;
+      if (typeof l["id"] !== "string" || typeof l["name"] !== "string" || typeof l["url"] !== "string") continue;
+      const name = l["name"].trim().slice(0, 60);
+      const check = validateYouTubeUrl(l["url"]);
+      if (!name || !check.ok || seen.has(l["id"])) continue;
+      seen.add(l["id"]);
+      links.push({
+        id: l["id"],
+        name,
+        url: check.url,
+        favorite: l["favorite"] === true,
+        createdAt: typeof l["createdAt"] === "number" ? l["createdAt"] : 0,
+      });
+    }
+  }
+  return { version: 1, volume, links };
+}
