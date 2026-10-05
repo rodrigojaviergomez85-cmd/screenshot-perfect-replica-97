@@ -103,3 +103,13 @@ describe("toEmbedUrl", () => {
     expect(toEmbedUrl("javascript:alert(1)")).toBeNull();
   });
 });
+
+import { toPlayerWrapperUrl } from "./music-links";
+describe("toPlayerWrapperUrl", () => {
+  it("builds a same-origin wrapper URL from validated ids only", () => {
+    expect(toPlayerWrapperUrl("https://youtu.be/M7lc1UVf-VE", "https://app.example.com/x")).toBe("https://app.example.com/youtube-player.html?v=M7lc1UVf-VE");
+    expect(toPlayerWrapperUrl("https://www.youtube.com/playlist?list=PLabc123", "http://localhost:8080")).toBe("http://localhost:8080/youtube-player.html?list=PLabc123");
+    expect(toPlayerWrapperUrl("https://youtu.be/M7lc1UVf-VE", "about:blank")).toBeNull();
+    expect(toPlayerWrapperUrl("https://evil.com/watch?v=M7lc1UVf-VE", "https://a.com")).toBeNull();
+  });
+});
