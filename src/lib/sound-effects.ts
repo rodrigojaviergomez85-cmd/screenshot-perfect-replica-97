@@ -25,6 +25,10 @@ export class SoundEngine {
   private noise: AudioBuffer | null = null;
   playing: EffectId | null = null;
   private listeners = new Set<Listener>();
+  /** Bumped by every play() and stop(); a play only renders if its token is still current. */
+  private generation = 0;
+
+  constructor(private readonly createContext?: () => AudioContext) {}
 
   subscribe(fn: Listener) {
     this.listeners.add(fn);
@@ -42,6 +46,13 @@ export class SoundEngine {
 
   private ensure(): AudioContext | null {
     if (typeof window === "undefined") return null;
+    if (!this.ctx && this.createContext) {
+      this.ctx = this.createContext();
+      this.master = this.ctx.createGain();
+      this.master.gain.value = this.volume;
+      this.master.connect(this.ctx.destination);
+      this.noise = this.ctx.createBuffer(1, Math.max(1, this.ctx.sampleRate * 2), this.ctx.sampleRate);
+    }
     if (!this.ctx) {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return null;
@@ -58,6 +69,7 @@ export class SoundEngine {
   }
 
   stop() {
+    this.generation++;
     if (this.endTimer) clearTimeout(this.endTimer);
     this.endTimer = null;
     for (const n of this.nodes) {
@@ -80,8 +92,11 @@ export class SoundEngine {
     const ctx = this.ensure();
     if (!ctx || !this.master) return;
     this.stop();
+    const token = ++this.generation;
     if (ctx.state === "suspended") {
       try { await ctx.resume(); } catch { return; }
+      // A newer play or a stop happened while resuming: this click is obsolete.
+      if (token !== this.generation) return;
     }
     this.bus = ctx.createGain();
     this.bus.connect(this.master);

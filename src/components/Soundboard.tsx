@@ -15,11 +15,12 @@ type Props = {
   backLabel: string;
   onBack: () => void;
   footer: ReactNode;
+  storageWarning?: boolean;
 };
 
 type Draft = { id: string | null; name: string; url: string; error: string | null };
 
-export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, onLinksChange, backLabel, onBack, footer }: Props) {
+export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, onLinksChange, backLabel, onBack, footer, storageWarning }: Props) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [undo, setUndo] = useState<{ link: MusicLink; index: number } | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -57,8 +58,7 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
   };
 
   const onFormKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") { e.preventDefault(); save(); }
-    else if (e.key === "Escape") { e.preventDefault(); setDraft(null); }
+    if (e.key === "Escape") { e.preventDefault(); setDraft(null); }
   };
 
   const playingLabel = EFFECTS.find((e) => e.id === playing)?.label;
@@ -128,10 +128,18 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
               </Button>
             )}
           </div>
+          {storageWarning && (
+            <p role="alert" className="mb-1 text-xs font-semibold text-destructive">No se pudo guardar en este navegador; los cambios pueden perderse al recargar.</p>
+          )}
           <p className="mb-2 text-xs text-muted-foreground">Las canciones se abren en YouTube. Pausa y volumen se controlan allí.</p>
 
           {draft && (
-            <div className="mb-2 space-y-1.5 rounded-xl border border-border bg-card p-2" onKeyDown={onFormKey}>
+            <form
+              className="mb-2 space-y-1.5 rounded-xl border border-border bg-card p-2"
+              onKeyDown={onFormKey}
+              onSubmit={(e) => { e.preventDefault(); save(); }}
+              noValidate
+            >
               <label className="block text-xs font-bold">
                 Nombre
                 <input
@@ -156,10 +164,10 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
               </label>
               {draft.error && <p role="alert" className="text-xs font-semibold text-destructive">{draft.error}</p>}
               <div className="flex justify-end gap-1.5">
-                <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setDraft(null)}>Cancelar</Button>
-                <Button size="sm" className="h-7 px-3 text-xs font-bold" onClick={save}>Guardar</Button>
+                <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setDraft(null)}>Cancelar</Button>
+                <Button type="submit" size="sm" className="h-7 px-3 text-xs font-bold">Guardar</Button>
               </div>
-            </div>
+            </form>
           )}
 
           {undo && (
