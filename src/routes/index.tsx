@@ -7,7 +7,7 @@ import { Music, ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil
 import { ZoomImport } from "@/components/ZoomImport";
 import { Soundboard } from "@/components/Soundboard";
 import { SoundEngine, type EffectId } from "@/lib/sound-effects";
-import { DEFAULT_SOUND_PREFS, parseSoundPrefs, SOUND_PREFS_KEY, type SoundPrefs } from "@/lib/music-links";
+import { DEFAULT_SOUND_PREFS, loadSoundPrefs, saveSoundPrefs, type SoundPrefs } from "@/lib/music-links";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -408,21 +408,33 @@ function FairTurns() {
   const soundEngine = useRef<SoundEngine | null>(null);
   if (!soundEngine.current) soundEngine.current = new SoundEngine();
   const [playingEffect, setPlayingEffect] = useState<EffectId | null>(null);
-  const [soundPrefs, setSoundPrefs] = useState<SoundPrefs>(DEFAULT_SOUND_PREFS);
-  const soundPrefsHydrated = useRef(false);
+  // Prefs and their load status change together, so defaults are never written before a real read.
+  const [soundState, setSoundState] = useState<{ prefs: SoundPrefs; status: "loading" | "ready" | "unreadable"; savedRaw: string | null }>(
+    { prefs: DEFAULT_SOUND_PREFS, status: "loading", savedRaw: null },
+  );
+  const soundPrefs = soundState.prefs;
+  const setSoundPrefs = useCallback((fn: (p: SoundPrefs) => SoundPrefs) => setSoundState((s) => ({ ...s, prefs: fn(s.prefs) })), []);
+  const [soundStorageWarning, setSoundStorageWarning] = useState(false);
   useEffect(() => soundEngine.current!.subscribe(setPlayingEffect), []);
   useEffect(() => () => soundEngine.current?.stop(), []);
   useEffect(() => {
-    let raw: string | null = null;
-    try { raw = window.localStorage.getItem(SOUND_PREFS_KEY); } catch { /* storage unavailable */ }
-    setSoundPrefs(parseSoundPrefs(raw));
-    soundPrefsHydrated.current = true;
+    let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { /* storage blocked */ }
+    const { prefs, readable } = loadSoundPrefs(storage);
+    setSoundState({ prefs, status: readable ? "ready" : "unreadable", savedRaw: JSON.stringify(prefs) });
+    if (!readable) setSoundStorageWarning(true);
   }, []);
   useEffect(() => {
     soundEngine.current!.setVolume(soundPrefs.volume);
-    if (!soundPrefsHydrated.current) return;
-    try { window.localStorage.setItem(SOUND_PREFS_KEY, JSON.stringify(soundPrefs)); } catch { /* quota or privacy mode */ }
-  }, [soundPrefs]);
+    if (soundState.status !== "ready") return;
+    const raw = JSON.stringify(soundPrefs);
+    if (raw === soundState.savedRaw) return; // nothing changed since the read
+    let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { /* storage blocked */ }
+    const ok = saveSoundPrefs(storage, soundPrefs);
+    setSoundStorageWarning(!ok);
+    if (ok) setSoundState((s) => ({ ...s, savedRaw: raw }));
+  }, [soundPrefs, soundState.status, soundState.savedRaw]);
   const pipExpandedSize = useRef<{ width: number; height: number } | null>(null);
   // OS frame (title bar + borders) measured from a real resize, so a reopen can ask
   // requestWindow for the content size that lands on the same outer bounds.
@@ -1927,6 +1939,7 @@ function FairTurns() {
       onLinksChange={(links) => setSoundPrefs((p) => ({ ...p, links }))}
       backLabel={soundsSource.current.view === "mini" ? "Volver a Mini" : "Volver a controles"}
       onBack={closeSounds}
+      storageWarning={soundStorageWarning}
       footer={
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2">
           <p className="min-w-0 truncate font-[family-name:var(--font-display)] text-xl font-extrabold text-primary" title={current?.name ?? "No student selected"}>

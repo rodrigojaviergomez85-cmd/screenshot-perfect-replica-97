@@ -60,3 +60,34 @@ describe("sound prefs restore", () => {
     expect(sortLinks([l("a", false, 1), l("b", true, 3), l("c", false, 2)]).map((x) => x.id)).toEqual(["b", "a", "c"]);
   });
 });
+
+import { loadSoundPrefs, saveSoundPrefs, SOUND_PREFS_KEY } from "./music-links";
+
+describe("sound prefs load/save", () => {
+  const mem = () => {
+    const data = new Map<string, string>();
+    const writes: string[] = [];
+    return { data, writes, getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => { writes.push(v); data.set(k, v); } };
+  };
+
+  it("reload restores two links, the star and volume 0.35 without writing", () => {
+    const s = mem();
+    const prefs = { version: 1 as const, volume: 0.35, links: [
+      { id: "a", name: "Warm-up", url: "https://youtu.be/dQw4w9WgXcQ", favorite: true, createdAt: 1 },
+      { id: "b", name: "Juego", url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", favorite: false, createdAt: 2 },
+    ] };
+    expect(saveSoundPrefs(s, prefs)).toBe(true);
+    s.writes.length = 0;
+    const loaded = loadSoundPrefs(s);
+    expect(loaded.readable).toBe(true);
+    expect(loaded.prefs).toEqual(prefs);
+    expect(s.writes).toEqual([]);
+  });
+
+  it("unreadable storage is flagged so callers never overwrite it", () => {
+    const bad = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
+    expect(loadSoundPrefs(bad).readable).toBe(false);
+    expect(saveSoundPrefs(bad, { version: 1, volume: 0.5, links: [] })).toBe(false);
+    expect(SOUND_PREFS_KEY).toBe("fair-participation-sounds-v1");
+  });
+});

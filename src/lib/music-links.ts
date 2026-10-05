@@ -50,6 +50,30 @@ export function sortLinks(links: MusicLink[]): MusicLink[] {
   return [...links].sort((a, b) => Number(b.favorite) - Number(a.favorite) || a.createdAt - b.createdAt);
 }
 
+type KV = Pick<Storage, "getItem" | "setItem">;
+
+/** Reads prefs once. readable=false means storage threw, so callers must never overwrite it. */
+export function loadSoundPrefs(storage: KV | null): { prefs: SoundPrefs; readable: boolean; raw: string | null } {
+  if (!storage) return { prefs: parseSoundPrefs(null), readable: false, raw: null };
+  try {
+    const raw = storage.getItem(SOUND_PREFS_KEY);
+    return { prefs: parseSoundPrefs(raw), readable: true, raw };
+  } catch {
+    return { prefs: parseSoundPrefs(null), readable: false, raw: null };
+  }
+}
+
+/** Returns false when the browser refused the write. */
+export function saveSoundPrefs(storage: KV | null, prefs: SoundPrefs): boolean {
+  if (!storage) return false;
+  try {
+    storage.setItem(SOUND_PREFS_KEY, JSON.stringify(prefs));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Parses stored prefs defensively; anything malformed falls back to defaults item by item. */
 export function parseSoundPrefs(raw: string | null): SoundPrefs {
   if (!raw) return { ...DEFAULT_SOUND_PREFS, links: [] };
