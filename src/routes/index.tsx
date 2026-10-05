@@ -1099,7 +1099,17 @@ function FairTurns() {
     if (!dpip) return;
     try {
       // requestWindow sizes the content viewport, while resizeTo uses the outer window.
-      const w = await dpip.requestWindow(miniView === "mini" ? MINI_PIP_CONTENT_SIZE : { width: 320, height: 320 });
+      // Reopening cannot resize (Chrome requires a user gesture inside the PiP window),
+      // so ask for the content size that already lands on the Mini outer bounds,
+      // using the OS frame measured during the last real resize.
+      const frame = pipFrameSize.current;
+      const miniContentSize = frame
+        ? {
+            width: Math.max(1, MINI_PIP_OUTER_SIZE.width - frame.width),
+            height: Math.max(1, MINI_PIP_OUTER_SIZE.height - frame.height),
+          }
+        : MINI_PIP_CONTENT_SIZE;
+      const w = await dpip.requestWindow(miniView === "mini" ? miniContentSize : { width: 320, height: 320 });
       document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
         w.document.head.appendChild(node.cloneNode(true));
       });
@@ -1109,10 +1119,6 @@ function FairTurns() {
       w.document.body.style.height = "100vh";
       w.document.body.style.display = "flex";
       w.addEventListener("pagehide", () => setPipWin(null));
-      if (miniView === "mini") {
-        // requestWindow's width/height are content size; normalize to outer bounds so reopening Mini matches its size exactly.
-        try { w.resizeTo(MINI_PIP_OUTER_SIZE.width, MINI_PIP_OUTER_SIZE.height); } catch { /* The browser may clamp or block the resize. */ }
-      }
       setPipWin(w);
     } catch {
       setPipSupported(false);
@@ -1123,6 +1129,11 @@ function FairTurns() {
   const showMiniView = () => {
     if (pipWin) {
       pipExpandedSize.current = { width: pipWin.outerWidth, height: pipWin.outerHeight };
+      // Remember the real OS frame so reopening Mini can request the matching content size.
+      pipFrameSize.current = {
+        width: Math.max(0, pipWin.outerWidth - pipWin.innerWidth),
+        height: Math.max(0, pipWin.outerHeight - pipWin.innerHeight),
+      };
       try { pipWin.resizeTo(MINI_PIP_OUTER_SIZE.width, MINI_PIP_OUTER_SIZE.height); } catch { /* The browser may enforce its own PiP minimums. */ }
     }
     setShowRoster(false);
