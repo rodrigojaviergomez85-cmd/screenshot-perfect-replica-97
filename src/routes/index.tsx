@@ -1106,6 +1106,10 @@ function FairTurns() {
       w.document.body.style.height = "100vh";
       w.document.body.style.display = "flex";
       w.addEventListener("pagehide", () => setPipWin(null));
+      if (miniView === "mini") {
+        // requestWindow's width/height are content size; normalize to outer bounds so reopening Mini matches its size exactly.
+        try { w.resizeTo(MINI_PIP_OUTER_SIZE.width, MINI_PIP_OUTER_SIZE.height); } catch { /* The browser may clamp or block the resize. */ }
+      }
       setPipWin(w);
     } catch {
       setPipSupported(false);
