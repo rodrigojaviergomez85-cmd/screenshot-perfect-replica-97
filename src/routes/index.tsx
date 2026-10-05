@@ -399,6 +399,9 @@ function FairTurns() {
   const [showRoster, setShowRoster] = useState(false);
   const [miniView, setMiniView] = useState<"controls" | "tally" | "mini">("controls");
   const pipExpandedSize = useRef<{ width: number; height: number } | null>(null);
+  // OS frame (title bar + borders) measured from a real resize, so a reopen can ask
+  // requestWindow for the content size that lands on the same outer bounds.
+  const pipFrameSize = useRef<{ width: number; height: number } | null>(null);
   const [newName, setNewName] = useState("");
   const [closingMessage, setClosingMessage] = useState<string | null>(null);
   const [skipUndo, setSkipUndo] = useState<{
