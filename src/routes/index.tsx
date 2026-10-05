@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserX, Users, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, List, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, SlidersHorizontal, Trash2, UserCheck, UserX, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { isThemePreference, resolveTheme, THEME_STORAGE_KEY, type ThemePreference } from "@/lib/theme";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -346,6 +347,8 @@ function FairTurns() {
   const [editingTime, setEditingTime] = useState(false);
   const [customDraft, setCustomDraft] = useState("");
   const [accentColor, setAccentColor] = useState<AccentColor>("green");
+  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
+  const [systemIsDark, setSystemIsDark] = useState(false);
   const [coachMessages, setCoachMessages] = useState<string[]>([...COACH_MESSAGES]);
   const [showCoachMessages, setShowCoachMessages] = useState(true);
   const [deletedCoachMessage, setDeletedCoachMessage] = useState<{ message: string; index: number } | null>(null);
@@ -380,6 +383,7 @@ function FairTurns() {
   const [lastPicked, setLastPicked] = useState<Student | null>(null);
   const [showRoster, setShowRoster] = useState(false);
   const [miniView, setMiniView] = useState<"controls" | "tally">("controls");
+  const [absentOpen, setAbsentOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [closingMessage, setClosingMessage] = useState<string | null>(null);
   const [skipUndo, setSkipUndo] = useState<{
@@ -412,6 +416,8 @@ function FairTurns() {
       if (ACCENT_OPTIONS.some((option) => option.id === savedColor)) {
         setAccentColor(savedColor as AccentColor);
       }
+      const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (isThemePreference(savedTheme)) setThemePreference(savedTheme);
       const savedMessages = window.localStorage.getItem(MESSAGES_STORAGE_KEY);
       if (savedMessages) {
         const parsedMessages: unknown = JSON.parse(savedMessages);
@@ -469,6 +475,7 @@ function FairTurns() {
     if (!preferencesLoaded) return;
     try {
       window.localStorage.setItem(COLOR_STORAGE_KEY, accentColor);
+      window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
       window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(coachMessages));
       window.localStorage.setItem(SHOW_MESSAGES_STORAGE_KEY, String(showCoachMessages));
       window.localStorage.setItem(TIMER_STORAGE_KEY, String(turnSeconds));
@@ -477,7 +484,26 @@ function FairTurns() {
     } catch {
       /* The app remains fully usable when browser storage is unavailable. */
     }
-  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, turnSeconds, afSeconds]);
+  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, themePreference, turnSeconds, afSeconds]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setSystemIsDark(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  const resolvedTheme = resolveTheme(themePreference, systemIsDark);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+    document.documentElement.dataset["theme"] = resolvedTheme;
+    if (pipWin) {
+      pipWin.document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+      pipWin.document.documentElement.dataset["theme"] = resolvedTheme;
+    }
+  }, [pipWin, resolvedTheme]);
 
   // Keep the active class entry in sync with live progress.
   useEffect(() => {
@@ -1046,6 +1072,7 @@ function FairTurns() {
       });
       w.document.documentElement.className = document.documentElement.className;
       w.document.documentElement.dataset["accent"] = accentColor;
+      w.document.documentElement.dataset["theme"] = resolvedTheme;
       w.document.body.style.margin = "0";
       w.document.body.style.height = "100vh";
       w.document.body.style.display = "flex";
