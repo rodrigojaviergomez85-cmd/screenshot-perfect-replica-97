@@ -108,3 +108,29 @@ export function parseSoundPrefs(raw: string | null): SoundPrefs {
   }
   return { version: 1, volume, links };
 }
+
+/**
+ * Builds the official YouTube embed URL from an already-validated link, using only
+ * the validated video/playlist ids. Returns null if the link cannot be embedded.
+ */
+export function toEmbedUrl(input: string): string | null {
+  const check = validateYouTubeUrl(input);
+  if (!check.ok) return null;
+  const u = new URL(check.url);
+  const parts = u.pathname.split("/").filter(Boolean);
+  const listRaw = u.searchParams.get("list");
+  const list = listRaw && LIST_ID.test(listRaw) ? listRaw : null;
+  let id: string | null = null;
+  if (u.hostname === "youtu.be") id = parts[0] ?? null;
+  else if (parts[0] === "watch") id = u.searchParams.get("v");
+  else if (["shorts", "live", "embed"].includes(parts[0] ?? "")) id = parts[1] ?? null;
+  if (id && !VIDEO_ID.test(id)) id = null;
+  const params = new URLSearchParams({ playsinline: "1", rel: "0" });
+  if (id) {
+    if (list) params.set("list", list);
+    return `https://www.youtube.com/embed/${id}?${params}`;
+  }
+  if (!list) return null;
+  params.set("list", list);
+  return `https://www.youtube.com/embed/videoseries?${params}`;
+}
