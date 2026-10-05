@@ -1,3 +1,4 @@
+import { confirmTurn, restorePendings, NO_PENDING, type Pendings } from "@/lib/pending-turn";
 import { nextMemory, pickNormal, type NormalMemory } from "@/lib/fair-pick";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -48,10 +49,10 @@ const CLASS_STORAGE_KEY = "fair-turns-class"; // legacy single-class key, migrat
 const CLASSES_STORAGE_KEY = "fair-turns-classes";
 
 /** Automatic Fluency cycle saved per class; only valid within its week. */
-type SavedAf = { week: string; queue: string[]; lastId: string | null };
+type SavedAf = { week: string; queue: string[]; lastId: string | null; skipped?: string[] };
 /** Normal-round order memory, valid only for its local day. */
 type SavedNormal = { day: string; last: string | null; avoid: string | null };
-type SavedClass = { id: string; name: string; day: string; round: number; students: Student[]; updatedAt: number; af?: SavedAf; normal?: SavedNormal };
+type SavedClass = { id: string; name: string; day: string; round: number; students: Student[]; updatedAt: number; af?: SavedAf; normal?: SavedNormal; pending?: unknown };
 
 function normalizeStudents(raw: unknown): Student[] {
   if (!Array.isArray(raw)) return [];
@@ -73,6 +74,7 @@ function normalizeAf(raw: unknown): SavedAf | undefined {
     week: a.week,
     queue: Array.isArray(a.queue) ? a.queue.filter((x): x is string => typeof x === "string") : [],
     lastId: typeof a.lastId === "string" ? a.lastId : null,
+    skipped: Array.isArray(a.skipped) ? a.skipped.filter((x): x is string => typeof x === "string") : [],
   };
 }
 
@@ -91,6 +93,7 @@ function normalizeClass(raw: unknown): SavedClass | null {
     students: normalizeStudents(c.students), updatedAt: Number(c.updatedAt) || 0,
     ...(af ? { af } : {}),
     ...(normal ? { normal } : {}),
+    ...(c.pending ? { pending: c.pending } : {}),
   };
 }
 
@@ -343,7 +346,8 @@ function FairTurns() {
 
   const [students, setStudents] = useState<Student[]>([]);
   const [round, setRound] = useState(1);
-  const [currentId, setCurrentId] = useState<string | null>(null);
+  /** Picked-but-unconfirmed turn per mode; picking never credits, NEXT confirms, Skip discards. */
+  const [pend, setPend] = useState<Pendings>(NO_PENDING);
   const [banner, setBanner] = useState<RoundBanner | null>(null);
 
   const [remaining, setRemaining] = useState(60);
@@ -368,6 +372,7 @@ function FairTurns() {
   const [setupMode, setSetupMode] = useState<"new" | "edit">("new");
   const [week, setWeek] = useState(() => weekKey());
   const [afMode, setAfMode] = useState(false);
+  const currentId = (afMode ? pend.af : pend.normal)?.id ?? null;
   const [afSeconds, setAfSeconds] = useState(30);
   const [afQueue, setAfQueue] = useState<string[]>([]);
   const [afIndex, setAfIndex] = useState(-1);
@@ -493,12 +498,12 @@ function FairTurns() {
   // Keep the active class entry in sync with live progress.
   useEffect(() => {
     if (!loadedClassId || screen === "home" || (screen === "setup" && setupMode === "new")) return;
-    const af: SavedAf = { week, queue: afQueue, lastId: afLast };
+    const af: SavedAf = { week, queue: afQueue, lastId: afLast, skipped: afSkipped };
     const normal: SavedNormal = { day: classDay, ...normalMem };
     setClasses((prev) =>
-      prev.map((c) => (c.id === loadedClassId ? { ...c, students, round, day: classDay, af, normal, updatedAt: Date.now() } : c)),
+      prev.map((c) => (c.id === loadedClassId ? { ...c, students, round, day: classDay, af, normal, pending: pend, updatedAt: Date.now() } : c)),
     );
-  }, [loadedClassId, classDay, round, screen, setupMode, students, week, afQueue, afLast, normalMem]);
+  }, [loadedClassId, classDay, round, screen, setupMode, students, week, afQueue, afLast, afSkipped, normalMem, pend]);
 
   useEffect(() => {
     if (!preferencesLoaded) return;
@@ -519,13 +524,15 @@ function FairTurns() {
         setClasses((prev) => prev.map((c) => ({ ...c, students: c.students.map((s) => ({ ...s, afWeek: undefined })) })));
         setClasses((prev) => prev.map((c) => ({ ...c, af: { week: thisWeek, queue: [], lastId: null } })));
         setAfQueue([]); setAfIndex(-1); setAfSkipped([]); setAfLast(null);
+        setPend((p) => ({ ...p, af: null }));
       }
       const today = localDay();
       if (today === classDay) return;
       setClassDay(today);
       setStudents((prev) => resetDay(prev));
       setRound(1);
-      setCurrentId(null);
+      // A pending turn from the previous day is discarded, never credited.
+      setPend(NO_PENDING);
       setLastPicked(null);
       setBanner(null);
       bannerShownForRound.current = null;
@@ -569,7 +576,7 @@ function FairTurns() {
     return () => window.clearInterval(id);
   }, [timerRunning]);
 
-  const enterClass = (list: Student[], classRound: number, savedAf?: SavedAf, savedNormal?: SavedNormal) => {
+  const enterClass = (list: Student[], classRound: number, savedAf?: SavedAf, savedNormal?: SavedNormal, savedPending?: unknown) => {
     clearSkipUndo();
     setStudents(list);
     setRound(classRound);
@@ -578,7 +585,8 @@ function FairTurns() {
     setWeek(thisWeek);
     const ids = new Set(list.map((s) => s.id));
     const af = savedAf && savedAf.week === thisWeek ? savedAf : null;
-    setAfMode(false); setAfIndex(-1); setAfSkipped([]); setTurnFirst(false);
+    setAfMode(false); setAfIndex(-1); setTurnFirst(false);
+    setAfSkipped(af?.skipped ? af.skipped.filter((x) => ids.has(x)) : []);
     setAfQueue(af ? af.queue.filter((x) => ids.has(x)) : []);
     setAfLast(af && af.lastId && ids.has(af.lastId) ? af.lastId : null);
     const nm = savedNormal && savedNormal.day === localDay() ? savedNormal : null;
@@ -586,8 +594,10 @@ function FairTurns() {
       last: nm?.last && ids.has(nm.last) ? nm.last : null,
       avoid: nm?.avoid && ids.has(nm.avoid) ? nm.avoid : null,
     });
-    setCurrentId(null);
-    setLastPicked(null);
+    // Resume today's pending turn (paused); old saves without one stay as they are.
+    const restored = restorePendings(savedPending, ids, localDay(), thisWeek);
+    setPend(restored);
+    setLastPicked(list.find((s) => s.id === restored.normal?.id) ?? null);
     setBanner(null);
     bannerShownForRound.current = null;
     const [firstMessage, ...laterMessages] = activeMessages;
@@ -616,15 +626,13 @@ function FairTurns() {
     const sameDay = c.day === localDay();
     setActiveClassId(c.id);
     setLoadedClassId(c.id);
-    enterClass(normalizeStudents(sameDay ? c.students : resetDay(c.students)), sameDay ? c.round : 1, c.af, c.normal);
+    enterClass(normalizeStudents(sameDay ? c.students : resetDay(c.students)), sameDay ? c.round : 1, c.af, c.normal, sameDay ? c.pending : undefined);
   };
 
   const goHome = () => {
     setTimerRunning(false);
     clearSkipUndo();
     setBanner(null);
-    setCurrentId(null);
-    setLastPicked(null);
     pipWin?.close();
     setCompact(false);
     setLoadedClassId(null);
@@ -659,17 +667,17 @@ function FairTurns() {
   const commitPick = useCallback(
     (picked: Student, startsNewRound = false) => {
       // A round counts at most once per student per round; extra manual turns only add a tally.
-      const first = startsNewRound || !picked.doneThisRound || !!picked.skippedThisRound;
+      // Picking never credits; the round is earned on confirm, at most once per round.
+      const first = startsNewRound || !picked.doneThisRound;
       setTurnFirst(first);
       setNormalMem((m) => nextMemory(m, picked.id, startsNewRound));
-      setCurrentId(picked.id);
-      setLastPicked({ ...picked, total: picked.total + 1 });
+      setPend((p) => ({ ...p, normal: { id: picked.id, day: classDay, earnsRound: first } }));
+      setLastPicked(picked);
       setStudents((prev) => {
         const next = prev.map((s) => {
           const base = startsNewRound ? { ...s, doneThisRound: false, skippedThisRound: false } : s;
           return s.id === picked.id
-            ? { ...base, doneThisRound: true, skippedThisRound: false, total: s.total + 1,
-                roundsCompleted: s.roundsCompleted + (first ? 1 : 0) }
+            ? { ...base, doneThisRound: true, skippedThisRound: false }
             : base;
         });
         return next;
@@ -684,7 +692,7 @@ function FairTurns() {
         setTimeUp(false);
       }
     },
-    [turnSeconds, useTimer],
+    [turnSeconds, useTimer, classDay],
   );
 
   const roundComplete = presentStudents.length > 0 && presentStudents.every((s) => s.doneThisRound);
@@ -755,10 +763,10 @@ function FairTurns() {
   const showAfPick = (list: Student[], id: string) => {
     const picked = list.find((s) => s.id === id);
     if (!picked) return;
-    afPrevWeek.current.set(id, picked.afWeek);
-    setCurrentId(id);
-    setLastPicked({ ...picked, total: picked.total + 1, afWeek: week });
-    setStudents(list.map((s) => (s.id === id ? { ...s, total: s.total + 1, afWeek: week } : s)));
+    // No credit yet: total and afWeek are confirmed only when the turn completes (NEXT).
+    setPend((p) => ({ ...p, af: { id, day: classDay, week } }));
+    setLastPicked(picked);
+    setStudents(list);
     startAfTimer();
   };
 
@@ -768,15 +776,21 @@ function FairTurns() {
    * current cycle; nobody repeats until the other present students had a turn, and the current student is
    * avoided when someone else is available.
    */
-  const afEligible = (list: Student[], curIdIn: string | null): { phase: "fresh" | "cycle"; ids: string[]; reset: boolean } => {
+  const afEligible = (list: Student[], curIdIn: string | null, skipped: string[] = afSkipped): { phase: "fresh" | "cycle"; ids: string[]; reset: boolean } => {
     // With no student on turn (e.g. after reload or a mode switch), avoid repeating the last AF pick.
     const curId = curIdIn ?? afLast;
     const present = list.filter((s) => s.absentDay !== classDay);
-    const fresh = present.filter((s) => s.afWeek !== week && s.id !== curId);
+    // Skipped students sit out the rest of this cycle, even without an AF record this week.
+    const fresh = present.filter((s) => s.afWeek !== week && s.id !== curId && !skipped.includes(s.id));
     if (fresh.length > 0) return { phase: "fresh", ids: fresh.map((s) => s.id), reset: false };
     let reset = false;
     let pool = present.filter((s) => !afQueue.includes(s.id));
-    if (pool.length === 0) { pool = present; reset = true; }
+    if (pool.length === 0) {
+      // New cycle: skips expire, so anyone still without AF this week keeps priority.
+      const freshAll = present.filter((s) => s.afWeek !== week && s.id !== curId);
+      if (freshAll.length > 0) return { phase: "fresh", ids: freshAll.map((s) => s.id), reset: true };
+      pool = present; reset = true;
+    }
     const withoutCurrent = pool.filter((s) => s.id !== curId);
     if (withoutCurrent.length > 0) pool = withoutCurrent;
     else if (!reset) {
@@ -787,25 +801,26 @@ function FairTurns() {
     return { phase: "cycle", ids: pool.map((s) => s.id), reset };
   };
 
-  const afCommit = (id: string, _phase: "fresh" | "cycle", reset = false) => {
+  const afCommit = (list: Student[], id: string, _phase: "fresh" | "cycle", reset = false) => {
     // Every AF turn (fresh or cycle) counts toward the current cycle, so present students
     // are all visited before anyone repeats.
-    const ids = new Set(students.map((s) => s.id));
+    const ids = new Set(list.map((s) => s.id));
     setAfQueue(reset ? [id] : [...afQueue.filter((x) => x !== id && ids.has(x)), id]);
     setAfLast(id);
-    setAfSkipped([]);
-    showAfPick(students, id);
+    if (reset) setAfSkipped([]);
+    showAfPick(list, id);
   };
 
   /** Automatic Fluency: continues until the coach switches back to Normal. */
   const afNext = () => {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
-    const { phase, ids, reset } = afEligible(students, currentId);
+    const list = confirmTurn(students, pend.af, "af", classDay, week);
+    const { phase, ids, reset } = afEligible(list, currentId);
     if (ids.length === 0) return;
     lastNextAt.current = now;
     clearSkipUndo();
-    afCommit(ids[Math.floor(Math.random() * ids.length)]!, phase, reset);
+    afCommit(list, ids[Math.floor(Math.random() * ids.length)]!, phase, reset);
   };
 
 
@@ -814,8 +829,8 @@ function FairTurns() {
     clearSkipUndo();
     setAfMode(af);
     // Keep the AF cycle (queue + last pick): leaving and returning to AF must not reopen it.
-    setAfIndex(-1); setAfSkipped([]);
-    setCurrentId(null);
+    // Each mode keeps its own pending turn: switching resumes it (paused) without crediting or dropping it.
+    setAfIndex(-1);
     setTimerRunning(false);
     setTimeUp(false);
     const seconds = af ? afSeconds : turnSeconds;
@@ -845,9 +860,12 @@ function FairTurns() {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     if (afMode) {
-      const { phase, ids, reset } = afEligible(students, currentId);
+      const list = confirmTurn(students, pend.af, "af", classDay, week);
+      const { phase, ids, reset } = afEligible(list, currentId);
       if (!ids.includes(id)) {
-        notify(phase === "fresh"
+        notify(afSkipped.includes(id)
+          ? `${target.name} skipped this turn — available next cycle.`
+          : phase === "fresh"
           ? `${target.name} already did AF this week — pick someone who hasn't yet.`
           : `${target.name} already had a turn — give the others a turn first.`);
         return;
@@ -855,13 +873,15 @@ function FairTurns() {
       lastNextAt.current = now;
       clearSkipUndo();
       setPickNotice(null);
-      afCommit(id, phase, reset);
+      afCommit(list, id, phase, reset);
       return;
     }
+    const startsNewRound = presentStudents.length > 0 && presentStudents.every((s) => s.doneThisRound);
+    if (!startsNewRound && target.skippedThisRound) { notify(`${target.name} skipped this turn — available next round.`); return; }
     lastNextAt.current = now;
     clearSkipUndo();
     setPickNotice(null);
-    const startsNewRound = presentStudents.length > 0 && presentStudents.every((s) => s.doneThisRound);
+    setStudents(confirmTurn(students, pend.normal, "normal", classDay, week));
     if (startsNewRound) { setBanner(null); setRound((r) => r + 1); }
     commitPick(target, startsNewRound);
   };
@@ -887,6 +907,8 @@ function FairTurns() {
     if (!picked) return;
     lastNextAt.current = now;
     clearSkipUndo();
+    // NEXT confirms the outgoing turn exactly once, then shows the next student uncredited.
+    setStudents(confirmTurn(students, pend.normal, "normal", classDay, week));
     if (startsNewRound) {
       setBanner(null);
       setRound((r) => r + 1);
@@ -895,9 +917,35 @@ function FairTurns() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   };
 
-  // X advances exactly like NEXT (no decrement, no undo).
+  /** Skip: discard the pending turn (no credit, nothing removed), keep the student out until the next round/cycle. */
   const canSkip = !!current;
-  const handleSkip = () => handleNext();
+  const handleSkip = () => {
+    const now = performance.now();
+    if (now - lastNextAt.current < 300) return;
+    if (afMode) {
+      const p = pend.af;
+      if (!p) return;
+      lastNextAt.current = now;
+      const skipped = [...afSkipped.filter((x) => x !== p.id), p.id];
+      setAfSkipped(skipped);
+      setPend((x) => ({ ...x, af: null }));
+      const { phase, ids, reset } = afEligible(students, p.id, skipped);
+      const pool = ids.filter((x) => !skipped.includes(x));
+      if (pool.length > 0) { afCommit(students, pool[Math.floor(Math.random() * pool.length)]!, phase, reset); if (reset) setAfSkipped([p.id]); return; }
+      setTimerRunning(false); setTimeUp(false);
+      return;
+    }
+    const p = pend.normal;
+    if (!p) return;
+    lastNextAt.current = now;
+    const list = students.map((s) => (s.id === p.id ? { ...s, doneThisRound: true, skippedThisRound: true } : s));
+    setStudents(list);
+    setPend((x) => ({ ...x, normal: null }));
+    const picked = choosePick(list, false);
+    if (picked) { commitPick(picked, false); return; }
+    // Round exhausted by the skip: wait for NEXT to open the next round.
+    setTimerRunning(false); setTimeUp(false);
+  };
 
   const toggleTimer = useCallback(() => {
     if (!afMode && (!useTimer || turnSeconds === 0)) return;
@@ -1011,7 +1059,8 @@ function FairTurns() {
           : { id: makeId(), name, total: 0, roundsCompleted: 0, doneThisRound: false };
       });
     });
-    setCurrentId(null);
+    const kept = new Set(students.filter((s) => names.some((n) => n.toLowerCase() === s.name.toLowerCase())).map((s) => s.id));
+    setPend((p) => ({ normal: p.normal && kept.has(p.normal.id) ? p.normal : null, af: p.af && kept.has(p.af.id) ? p.af : null }));
     setScreen("class");
   };
 
@@ -1489,7 +1538,7 @@ function FairTurns() {
             {s.afWeek === week && <span className="text-[10px] font-bold text-primary">AF ✓</span>}
             <Tally count={s.total} className="flex-1 text-foreground/70" />
             {s.skippedThisRound ? (
-              <span className="text-xs font-bold text-muted-foreground" aria-label="Didn't participate">✗</span>
+              <span className="text-xs font-bold text-muted-foreground" aria-label="Skipped this turn">✗</span>
             ) : s.doneThisRound && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
             <button onClick={() => removeStudent(s.id)} aria-label={`Remove ${s.name}`} className="rounded p-0.5 hover:bg-muted">
               <X className="h-4 w-4" />
@@ -1594,7 +1643,7 @@ function FairTurns() {
         >
           NEXT
         </Button>
-        <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Next student" aria-label="Next student">
+        <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Skip this turn" aria-label="Skip this turn">
           ✗
         </Button>
         {(useTimer || afMode) && (
@@ -1678,6 +1727,9 @@ function FairTurns() {
             onClick={() => {
               setTimerRunning(false);
               clearSkipUndo();
+              // End class is an explicit close: confirm the outgoing turn of the active mode once.
+              setStudents(confirmTurn(students, afMode ? pend.af : pend.normal, afMode ? "af" : "normal", classDay, week));
+              setPend((p) => (afMode ? { ...p, af: null } : { ...p, normal: null }));
               const [next] = showCoachMessages
                 ? shuffleMessages(activeMessages, lastCoachMessage.current)
                 : [];
@@ -1747,15 +1799,15 @@ function FairTurns() {
               variant="outline"
               onClick={handleSkip}
               disabled={!canSkip}
-              title="Next student"
-              aria-label="Next student"
+              title="Skip this turn"
+              aria-label="Skip this turn"
               className="h-24 w-24 rounded-3xl text-4xl font-extrabold"
             >
               ✗
             </Button>
           </div>
           <p className="text-xs uppercase tracking-widest text-muted-foreground">
-            Space = next · X = next · P = pause · T = time
+            Space = next (confirms turn) · X = skip turn · P = pause · T = time
           </p>
         </div>
 
@@ -1814,7 +1866,7 @@ function FairTurns() {
                     key={s.id}
                     className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-base font-semibold transition-colors ${cls}`}
                   >
-                    {s.doneThisRound && !isCurrent && (s.skippedThisRound ? <span aria-label="Didn't participate" className="text-muted-foreground">✗</span> : <span aria-hidden>✓</span>)}
+                    {s.doneThisRound && !isCurrent && (s.skippedThisRound ? <span aria-label="Skipped this turn" className="text-muted-foreground">✗</span> : <span aria-hidden>✓</span>)}
                     <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}>{s.name}</button>
                     {absenceButton(s)}
                     {s.afWeek === week && <span className="text-xs font-bold">AF ✓</span>}
