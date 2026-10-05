@@ -808,28 +808,6 @@ function FairTurns() {
     afCommit(ids[Math.floor(Math.random() * ids.length)]!, phase, reset);
   };
 
-  /** Skip reverts only the skipped turn and leaves no current student until another explicit action. */
-  const afSkip = () => {
-    if (!current || afSkipped.includes(current.id)) return;
-    const now = performance.now();
-    if (now - lastNextAt.current < 300) return;
-    lastNextAt.current = now;
-    setSkipUndo({ students, currentId, lastPicked, remaining, activeTurnSeconds, timerRunning, timeUp, round, banner, turnFirst,
-      af: { queue: afQueue, index: afIndex, skipped: afSkipped, last: afLast } });
-    if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
-    skipUndoTimer.current = window.setTimeout(() => { setSkipUndo(null); skipUndoTimer.current = null; }, 5000);
-    const id = current.id;
-    setStudents(students.map((s) =>
-      s.id === id ? { ...s, total: Math.max(0, s.total - 1), afWeek: afPrevWeek.current.get(id) } : s,
-    ));
-    const nextQueue = afQueue.filter((x) => x !== id);
-    setAfQueue(nextQueue);
-    setAfLast(nextQueue[nextQueue.length - 1] ?? null);
-    setAfSkipped([...afSkipped, id]);
-    setCurrentId(null);
-    setTimerRunning(false);
-    setTimeUp(false);
-  };
 
   const switchMode = (af: boolean) => {
     if (af === afMode) return;
@@ -917,67 +895,9 @@ function FairTurns() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   };
 
-  const canSkip = afMode
-    ? !!current && students.some((s) => s.id === current.id) && !afSkipped.includes(current.id)
-    : !!current && students.some((s) => s.id === current.id);
-
-  const handleSkip = () => {
-    if (afMode) { afSkip(); return; }
-    if (!current) return;
-    const target = students.find((s) => s.id === current.id);
-    if (!target) return;
-    const now = performance.now();
-    if (now - lastNextAt.current < 300) return;
-    lastNextAt.current = now;
-    setSkipUndo({ students, currentId, lastPicked, remaining, activeTurnSeconds, timerRunning, timeUp, round, banner, turnFirst, normalMem });
-    if (skipUndoTimer.current !== null) window.clearTimeout(skipUndoTimer.current);
-    skipUndoTimer.current = window.setTimeout(() => {
-      setSkipUndo(null);
-      skipUndoTimer.current = null;
-    }, 5000);
-    // Revert only this turn: its tally always; its round only if this turn earned it.
-    const next = students.map((s) =>
-      s.id === target.id
-        ? turnFirst
-          ? { ...s, doneThisRound: true, skippedThisRound: true, total: Math.max(0, s.total - 1),
-              roundsCompleted: Math.max(0, s.roundsCompleted - 1) }
-          : { ...s, total: Math.max(0, s.total - 1) }
-        : s,
-    );
-    setStudents(next);
-    // Skip completes the current round if nobody is left; the next round starts only on NEXT.
-    const picked = choosePick(next, false);
-    if (!picked) {
-      setCurrentId(null);
-      setTurnFirst(false);
-      setTimerRunning(false);
-      setTimeUp(false);
-      return;
-    }
-    commitPick(picked, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  };
-
-  const undoSkip = () => {
-    if (!skipUndo) return;
-    setStudents(skipUndo.students);
-    setCurrentId(skipUndo.currentId);
-    setLastPicked(skipUndo.lastPicked);
-    setRemaining(skipUndo.remaining);
-    setActiveTurnSeconds(skipUndo.activeTurnSeconds);
-    setTimerRunning(skipUndo.timerRunning);
-    setTimeUp(skipUndo.timeUp);
-    setRound(skipUndo.round);
-    setBanner(skipUndo.banner);
-    setTurnFirst(skipUndo.turnFirst);
-    if (skipUndo.normalMem) setNormalMem(skipUndo.normalMem);
-    if (skipUndo.af) {
-      setAfQueue(skipUndo.af.queue); setAfIndex(skipUndo.af.index); setAfSkipped(skipUndo.af.skipped);
-      setAfLast(skipUndo.af.last);
-    }
-    if (!skipUndo.students.every((s) => s.doneThisRound)) bannerShownForRound.current = null;
-    clearSkipUndo();
-  };
+  // X advances exactly like NEXT (no decrement, no undo).
+  const canSkip = !!current;
+  const handleSkip = () => handleNext();
 
   const toggleTimer = useCallback(() => {
     if (!afMode && (!useTimer || turnSeconds === 0)) return;
@@ -1674,7 +1594,7 @@ function FairTurns() {
         >
           NEXT
         </Button>
-        <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate">
+        <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Next student" aria-label="Next student">
           ✗
         </Button>
         {(useTimer || afMode) && (
@@ -1688,9 +1608,6 @@ function FairTurns() {
           </>
         )}
       </div>
-      {skipUndo && (
-        <button onClick={undoSkip} className="text-center text-xs font-bold text-primary underline">Undo skip</button>
-      )}
       <p className="text-center text-xs font-semibold text-muted-foreground">
         {afProgress ?? `Round ${round} · ${doneCount}/${presentStudents.length} · ${noTimer ? "no timer" : `${turnSeconds}s`}`}
       </p>
@@ -1830,18 +1747,15 @@ function FairTurns() {
               variant="outline"
               onClick={handleSkip}
               disabled={!canSkip}
-              title="Didn't participate"
-              aria-label="Didn't participate"
+              title="Next student"
+              aria-label="Next student"
               className="h-24 w-24 rounded-3xl text-4xl font-extrabold"
             >
               ✗
             </Button>
           </div>
-          {skipUndo && (
-            <button onClick={undoSkip} className="text-sm font-bold text-primary underline">Undo skip</button>
-          )}
           <p className="text-xs uppercase tracking-widest text-muted-foreground">
-            Space = next · X = skip · P = pause · T = time
+            Space = next · X = next · P = pause · T = time
           </p>
         </div>
 
