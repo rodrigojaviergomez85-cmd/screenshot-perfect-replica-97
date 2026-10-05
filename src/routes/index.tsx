@@ -1668,19 +1668,19 @@ function FairTurns() {
   );
 
   const miniCurrent = (
-    <div className="shrink-0 space-y-1">
-      <p key={current ? current.id + String(current.total) : "empty"} className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-3xl font-extrabold leading-tight text-primary" title={current?.name}>
+      <div className="shrink-0 space-y-0.5">
+      <p key={current ? current.id + String(current.total) : "empty"} className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-2xl font-extrabold leading-tight text-primary" title={current?.name}>
         {current?.name ?? "—"}
       </p>
       {(useTimer || afMode) && <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
-        <p className={`text-center text-2xl font-extrabold tabular-nums ${timeColor}`}>{remaining === 0 && timeUp ? "Time's up" : mmss(remaining)}</p>
+        <p className={`text-center text-xl font-extrabold tabular-nums ${timeColor}`}>{remaining === 0 && timeUp ? "Time's up" : mmss(remaining)}</p>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary"><div className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`} style={{ width: `${Math.max(0, timeRatio * 100)}%` }} /></div>
       </div>}
     </div>
   );
 
   const mini = miniView === "tally" ? tallyView : (
-    <div className="relative flex h-full min-h-0 w-full flex-col gap-2 bg-background p-3 text-foreground">
+    <div className="relative flex h-full min-h-0 w-full flex-col gap-1.5 bg-background p-3 text-foreground">
       <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <p className="truncate text-sm font-extrabold">{activeClassName}</p>
         <span className="flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs font-bold"><Users className="h-3.5 w-3.5" /> {presentRoster.length}/{students.length}</span>
@@ -1692,7 +1692,7 @@ function FairTurns() {
         </div>
       )}
       {!showRoster && miniCurrent}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+      <div className="min-h-10 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
       {showRoster ? rosterPanel :
       <div className="mt-3 rounded-xl border border-border bg-card p-2 text-card-foreground">
         <p className="mb-1 text-[10px] font-semibold text-muted-foreground">Mode</p>
@@ -1701,17 +1701,17 @@ function FairTurns() {
       </div>
       }
       </div>
-      <div className="shrink-0 space-y-1.5">
-      <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-12 w-full rounded-2xl text-xl font-extrabold tracking-wide">NEXT</Button>
+      <div className="shrink-0 space-y-1">
+      <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-10 w-full rounded-2xl text-xl font-extrabold tracking-wide">NEXT</Button>
       <div className="grid grid-cols-3 gap-1.5">
-        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate"><X className="h-4 w-4" /> Skip</Button>
-        <Button variant="outline" className="h-9 rounded-xl px-1 text-xs font-bold tabular-nums" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>{timerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}{!noTimer && `${mmss(remaining)} · `}{timerRunning ? "Pause" : "Resume"}</Button>
-        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={resetTimer} aria-label="Reset"><RotateCcw className="h-4 w-4" /> Reset</Button>
+        <Button variant="outline" className="h-8 rounded-xl text-xs font-bold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate"><X className="h-4 w-4" /> Skip</Button>
+        <Button variant="outline" className="h-8 rounded-xl px-1 text-xs font-bold tabular-nums" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>{timerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}{!noTimer && `${mmss(remaining)} · `}{timerRunning ? "Pause" : "Resume"}</Button>
+        <Button variant="outline" className="h-8 rounded-xl text-xs font-bold" onClick={resetTimer} aria-label="Reset"><RotateCcw className="h-4 w-4" /> Reset</Button>
       </div>
       {skipUndo && (
         <button onClick={undoSkip} className="text-center text-xs font-bold text-primary underline">Undo skip</button>
       )}
-      <p className="text-center text-xs font-semibold text-muted-foreground">
+      <p className="truncate text-center text-[10px] font-semibold text-muted-foreground">
         {afProgress ?? `Round ${round} · ${doneCount}/${presentStudents.length} · ${noTimer ? "no timer" : `${turnSeconds}s`}`}
       </p>
       </div>

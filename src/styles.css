@@ -139,7 +139,7 @@
   --accent-text: hsl(60 85% 15%);
 }
 
-.dark {
+:root.dark {
   --accent-tint: color-mix(in oklab, var(--accent) 18%, oklch(0.2 0.02 165));
   --accent-text: oklch(0.96 0.01 165);
   --background: color-mix(in oklab, var(--accent) 15%, oklch(0.13 0.015 165));
