@@ -140,6 +140,7 @@
 }
 
 .dark {
+  --accent-text: color-mix(in oklab, var(--accent) 58%, white);
   --background: color-mix(in oklab, var(--accent) 15%, oklch(0.13 0.015 165));
   --foreground: oklch(0.97 0.01 165);
   --card: color-mix(in oklab, var(--accent) 13%, oklch(0.18 0.018 165));
