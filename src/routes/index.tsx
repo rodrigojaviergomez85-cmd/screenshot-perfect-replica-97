@@ -330,6 +330,7 @@ function TimerLengthControls({
 
 function FairTurns() {
   const [screen, setScreen] = useState<Screen>("home");
+  const [editingRoster, setEditingRoster] = useState(false);
   const [rosterText, setRosterText] = useState("");
   const [useTimer, setUseTimer] = useState(true);
   const [turnSeconds, setTurnSeconds] = useState(60);
@@ -356,6 +357,19 @@ function FairTurns() {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [classDay, setClassDay] = useState(() => localDay());
   const [classes, setClasses] = useState<SavedClass[]>([]);
+  useEffect(() => {
+    const sync = (e: StorageEvent) => {
+      if (e.key === CLASSES_STORAGE_KEY && e.newValue) {
+        try {
+          const { classes: raw } = JSON.parse(e.newValue);
+          const parsed = Array.isArray(raw) ? raw.map(normalizeClass).filter(Boolean) : [];
+          setClasses(parsed as SavedClass[]);
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, []);
   const [activeClassId, setActiveClassId] = useState<string | null>(null);
   /** Class actually loaded into the live session; only this one is ever synced back to storage. */
   const [loadedClassId, setLoadedClassId] = useState<string | null>(null);
@@ -608,6 +622,7 @@ function FairTurns() {
     setTimerRunning(false);
     setTimeUp(false);
     setScreen("class");
+    setEditingRoster(false);
   };
 
   const startClass = () => {
@@ -645,7 +660,7 @@ function FairTurns() {
     setSetupMode("new");
     setNewClassName("");
     setRosterText("");
-    setScreen("setup");
+    setEditingRoster(true);
   };
 
   const renameClass = (c: SavedClass) => {
@@ -1088,7 +1103,7 @@ function FairTurns() {
     setSetupMode("edit");
     setRosterText(students.map((s) => s.name).join("\n"));
     setTimerRunning(false);
-    setScreen("setup");
+    setEditingRoster(true);
   };
 
   const applyRosterEdits = () => {
@@ -1105,6 +1120,7 @@ function FairTurns() {
     });
     setCurrentId(null);
     setScreen("class");
+    setEditingRoster(false);
   };
 
   const updateCoachMessage = (index: number, value: string) => {
