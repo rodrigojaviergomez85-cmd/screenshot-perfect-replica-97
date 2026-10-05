@@ -3,7 +3,7 @@ import { nextMemory, pickNormal, type NormalMemory } from "@/lib/fair-pick";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserX, Users, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserMinus, UserX, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -552,6 +552,7 @@ function FairTurns() {
 
   useEffect(() => () => {
     if (undoMessageTimer.current !== null) window.clearTimeout(undoMessageTimer.current);
+    if (pendingRemoveTimer.current !== null) window.clearTimeout(pendingRemoveTimer.current);
   }, []);
 
   useEffect(() => {
@@ -578,6 +579,7 @@ function FairTurns() {
 
   const enterClass = (list: Student[], classRound: number, savedAf?: SavedAf, savedNormal?: SavedNormal, savedPending?: unknown) => {
     clearSkipUndo();
+    clearPendingRemove();
     setStudents(list);
     setRound(classRound);
     setClassDay(localDay());
@@ -737,9 +739,42 @@ function FairTurns() {
     );
   };
 
+  /** Removing a student: first tap arms the button, a second tap on the same student removes them. */
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
+  const pendingRemoveTimer = useRef<number | null>(null);
+  const clearPendingRemove = () => {
+    if (pendingRemoveTimer.current !== null) window.clearTimeout(pendingRemoveTimer.current);
+    pendingRemoveTimer.current = null;
+    setPendingRemove(null);
+  };
+
   const removeStudent = (id: string) => {
+    const name = students.find((s) => s.id === id)?.name ?? "Student";
     clearSkipUndo();
+    clearPendingRemove();
     setStudents((prev) => prev.filter((s) => s.id !== id));
+    // A removed student never gets credited later: their uncredited pending turn is discarded.
+    setPend((p) => ({ normal: p.normal?.id === id ? null : p.normal, af: p.af?.id === id ? null : p.af }));
+    setLastPicked((lp) => (lp && lp.id === id ? null : lp));
+    setAfQueue((q) => q.filter((x) => x !== id));
+    setAfSkipped((q) => q.filter((x) => x !== id));
+    setAfLast((v) => (v === id ? null : v));
+    setNormalMem((m) => ({ last: m.last === id ? null : m.last, avoid: m.avoid === id ? null : m.avoid }));
+    notify(`${name} removed from this class.`);
+  };
+
+  const armRemove = (s: Student) => {
+    clearSkipUndo();
+    setPendingRemove(s.id);
+    const msg = `Tap again to remove ${s.name} from this class.`;
+    if (pickNoticeTimer.current !== null) { window.clearTimeout(pickNoticeTimer.current); pickNoticeTimer.current = null; }
+    setPickNotice(msg);
+    if (pendingRemoveTimer.current !== null) window.clearTimeout(pendingRemoveTimer.current);
+    pendingRemoveTimer.current = window.setTimeout(() => {
+      pendingRemoveTimer.current = null;
+      setPendingRemove(null);
+      setPickNotice((n) => (n === msg ? null : n));
+    }, 5000);
   };
 
   const addImported = (names: string[]) => {
@@ -894,6 +929,22 @@ function FairTurns() {
       {isAbsent(s) ? <UserCheck className={small ? "h-3.5 w-3.5" : "h-4 w-4"} /> : <UserX className={small ? "h-3.5 w-3.5" : "h-4 w-4"} />}
     </button>
   );
+
+  /** Delete a student. Sits right next to the absence toggle and uses a person-with-minus, not a trash can. */
+  const removeButton = (s: Student, small = false) => {
+    const armed = pendingRemove === s.id;
+    const size = small ? "h-3.5 w-3.5" : "h-4 w-4";
+    return (
+      <button type="button"
+        onClick={(e) => { e.stopPropagation(); if (armed) removeStudent(s.id); else armRemove(s); }}
+        title={armed ? `Tap again to remove ${s.name}` : `Remove ${s.name} from this class`}
+        aria-label={armed ? `Confirm remove ${s.name}` : `Remove ${s.name} from this class`}
+        aria-pressed={armed}
+        className={`shrink-0 rounded p-0.5 hover:bg-muted ${armed ? "bg-destructive text-destructive-foreground ring-2 ring-destructive/60" : "text-destructive opacity-70"}`}>
+        <UserMinus className={size} />
+      </button>
+    );
+  };
 
   const noticeLine = pickNotice ? <p role="status" className="rounded-lg bg-warning/15 px-2 py-1 text-xs font-semibold text-foreground">{pickNotice}</p> : null;
 
@@ -1535,14 +1586,12 @@ function FairTurns() {
             <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}
               className={`truncate text-left ${isAbsent(s) ? "line-through opacity-50" : ""}`}>{s.name}</button>
             {absenceButton(s, true)}
+            {removeButton(s, true)}
             {s.afWeek === week && <span className="text-[10px] font-bold text-primary">AF ✓</span>}
             <Tally count={s.total} className="flex-1 text-foreground/70" />
             {s.skippedThisRound ? (
               <span className="text-xs font-bold text-muted-foreground" aria-label="Skipped this turn">✗</span>
             ) : s.doneThisRound && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
-            <button onClick={() => removeStudent(s.id)} aria-label={`Remove ${s.name}`} className="rounded p-0.5 hover:bg-muted">
-              <X className="h-4 w-4" />
-            </button>
           </li>
         ))}
       </ul>
@@ -1569,6 +1618,7 @@ function FairTurns() {
               <span className="flex min-w-0 items-center gap-1">
                 <button type="button" onClick={() => manualPick(s.id)} className={`truncate text-left font-bold ${absent ? "line-through" : ""}`} title={`Pick ${s.name}`}>{s.name}</button>
                 {absenceButton(s, true)}
+                {removeButton(s, true)}
                 {absent && <span className="shrink-0 text-[10px] font-semibold">absent</span>}
                 {s.afWeek === week && <span className="shrink-0 text-[10px] font-bold">AF ✓</span>}
               </span>
