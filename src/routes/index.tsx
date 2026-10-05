@@ -381,6 +381,7 @@ function FairTurns() {
   const [pipSupported, setPipSupported] = useState(false);
   const [compact, setCompact] = useState(false);
   const [lastPicked, setLastPicked] = useState<Student | null>(null);
+  const [showRoster, setShowRoster] = useState(false);
   const [miniView, setMiniView] = useState<"controls" | "tally">("controls");
   const [absentOpen, setAbsentOpen] = useState(false);
   const [newName, setNewName] = useState("");
@@ -1586,6 +1587,18 @@ function FairTurns() {
     </div>
   );
 
+  const rosterPanel = (
+    <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-xl border border-border bg-card p-2 text-card-foreground">
+      <div className="flex gap-1">
+        <input value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") addStudent(); }} placeholder="New student" className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+        <Button size="sm" className="h-8 rounded-lg" onClick={addStudent}>Add</Button>
+      </div>
+      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto">
+        {students.map((s) => <li key={s.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1 rounded-lg bg-secondary px-2 py-1 text-xs font-semibold"><button type="button" className={`truncate text-left ${isAbsent(s) ? "line-through opacity-60" : ""}`} onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}>{s.name}</button>{absenceButton(s, true)}<Button type="button" variant="ghost" size="icon" className="h-6 w-6 rounded-md" onClick={() => removeStudent(s.id)} aria-label={`Remove ${s.name}`}><X className="h-3.5 w-3.5" /></Button></li>)}
+      </ul>
+    </div>
+  );
+
   const renderMiniStudentRow = (s: Student, absent = false) => {
     const isCur = s.id === currentId;
     return (
@@ -1626,7 +1639,7 @@ function FairTurns() {
     <div className="flex h-full min-h-0 w-full flex-col gap-2 bg-background p-3 text-foreground">
       <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <p className="truncate text-sm font-extrabold">{activeClassName}</p>
-        <span className="flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs font-bold"><Users className="h-3.5 w-3.5" /> {presentRoster.length}/{students.length}</span>
+        <button type="button" onClick={() => setShowRoster((shown) => !shown)} className="flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs font-bold" title="Add or remove students" aria-label="Add or remove students"><Users className="h-3.5 w-3.5" /> {presentRoster.length}/{students.length}</button>
       </div>
       {miniTabs}
       {noticeLine}
@@ -1661,6 +1674,7 @@ function FairTurns() {
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
+      {showRoster ? rosterPanel : <>
       <p
         key={current ? current.id + String(current.total) : "empty"}
         className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight text-primary"
@@ -1687,6 +1701,7 @@ function FairTurns() {
         {modeControls}
         {!afMode && <><p className="mb-1 mt-2 text-[10px] font-semibold text-muted-foreground">Time per turn</p>{timerLengthControls}</>}
       </div>
+      </>}
       </div>
       <div className="shrink-0 space-y-1.5">
       <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-12 w-full rounded-2xl text-xl font-extrabold tracking-wide">NEXT</Button>
@@ -1835,7 +1850,7 @@ function FairTurns() {
             <div className="text-left"><p className="mb-1 text-xs font-semibold text-muted-foreground">Mode</p>{modeControls}{!afMode && <><p className="mb-1 mt-3 text-xs font-semibold text-muted-foreground">Time per turn</p>{timerLengthControls}</>}{afProgress && <p className="mt-2 text-center text-xs font-bold text-primary">{afProgress}</p>}</div>
           </div>
           <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-14 w-full rounded-2xl text-2xl font-extrabold tracking-wide">NEXT</Button>
-          <div className="grid grid-cols-3 gap-2"><Button variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate"><X className="h-4 w-4" /> Skip</Button><Button variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={toggleTimer} disabled={noTimer}><Play className="h-4 w-4" /> {timerRunning ? "Pause" : "Resume"}</Button><Button variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={resetTimer}><RotateCcw className="h-4 w-4" /> Reset</Button></div>
+          <div className="grid grid-cols-3 gap-2"><Button variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate"><X className="h-4 w-4" /> Skip</Button><Button variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={toggleTimer} disabled={noTimer}>{timerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />} {timerRunning ? "Pause" : "Resume"}</Button><Button variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={resetTimer}><RotateCcw className="h-4 w-4" /> Reset</Button></div>
           {skipUndo && <button onClick={undoSkip} className="text-center text-sm font-bold text-primary underline">Undo skip</button>}
           {!noTimer && timeUp && <p className="text-center text-sm font-bold text-destructive">Time's up</p>}
           <p className="text-center text-[10px] uppercase text-muted-foreground">Space = next · X = skip · P = pause · T = time</p>
