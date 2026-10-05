@@ -45,7 +45,6 @@ export class SoundEngine {
   }
 
   private ensure(): AudioContext | null {
-    if (typeof window === "undefined") return null;
     if (!this.ctx && this.createContext) {
       this.ctx = this.createContext();
       this.master = this.ctx.createGain();
@@ -53,6 +52,7 @@ export class SoundEngine {
       this.master.connect(this.ctx.destination);
       this.noise = this.ctx.createBuffer(1, Math.max(1, this.ctx.sampleRate * 2), this.ctx.sampleRate);
     }
+    if (!this.ctx && typeof window === "undefined") return null;
     if (!this.ctx) {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return null;
