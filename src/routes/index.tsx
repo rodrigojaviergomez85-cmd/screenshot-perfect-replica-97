@@ -3,8 +3,11 @@ import { nextMemory, pickNormal, type NormalMemory } from "@/lib/fair-pick";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserMinus, UserX, Users, X } from "lucide-react";
+import { Music, ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserMinus, UserX, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
+import { Soundboard } from "@/components/Soundboard";
+import { SoundEngine, type EffectId } from "@/lib/sound-effects";
+import { DEFAULT_SOUND_PREFS, parseSoundPrefs, SOUND_PREFS_KEY, type SoundPrefs } from "@/lib/music-links";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -47,6 +50,8 @@ type Screen = "home" | "setup" | "class" | "summary";
 
 const MINI_PIP_CONTENT_SIZE = { width: 320, height: 56 } as const;
 const MINI_PIP_OUTER_SIZE = { width: 320, height: 96 } as const;
+const SOUNDS_PIP_OUTER_SIZE = { width: 420, height: 600 } as const;
+type FloatView = "controls" | "tally" | "mini" | "sounds";
 
 const CLASS_STORAGE_KEY = "fair-turns-class"; // legacy single-class key, migrated once
 const CLASSES_STORAGE_KEY = "fair-turns-classes";
@@ -397,7 +402,27 @@ function FairTurns() {
   const [compact, setCompact] = useState(false);
   const [lastPicked, setLastPicked] = useState<Student | null>(null);
   const [showRoster, setShowRoster] = useState(false);
-  const [miniView, setMiniView] = useState<"controls" | "tally" | "mini">("controls");
+  const [miniView, setMiniView] = useState<FloatView>("controls");
+  // Soundboard: remembers which view (and its real outer size) opened it, so Back restores both.
+  const soundsSource = useRef<{ view: Exclude<FloatView, "sounds">; size: { width: number; height: number } | null }>({ view: "controls", size: null });
+  const soundEngine = useRef<SoundEngine | null>(null);
+  if (!soundEngine.current) soundEngine.current = new SoundEngine();
+  const [playingEffect, setPlayingEffect] = useState<EffectId | null>(null);
+  const [soundPrefs, setSoundPrefs] = useState<SoundPrefs>(DEFAULT_SOUND_PREFS);
+  const soundPrefsHydrated = useRef(false);
+  useEffect(() => soundEngine.current!.subscribe(setPlayingEffect), []);
+  useEffect(() => () => soundEngine.current?.stop(), []);
+  useEffect(() => {
+    let raw: string | null = null;
+    try { raw = window.localStorage.getItem(SOUND_PREFS_KEY); } catch { /* storage unavailable */ }
+    setSoundPrefs(parseSoundPrefs(raw));
+    soundPrefsHydrated.current = true;
+  }, []);
+  useEffect(() => {
+    soundEngine.current!.setVolume(soundPrefs.volume);
+    if (!soundPrefsHydrated.current) return;
+    try { window.localStorage.setItem(SOUND_PREFS_KEY, JSON.stringify(soundPrefs)); } catch { /* quota or privacy mode */ }
+  }, [soundPrefs]);
   const pipExpandedSize = useRef<{ width: number; height: number } | null>(null);
   // OS frame (title bar + borders) measured from a real resize, so a reopen can ask
   // requestWindow for the content size that lands on the same outer bounds.
@@ -1063,6 +1088,8 @@ function FairTurns() {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && /input|textarea|select/i.test(el.tagName)) return;
+      // Typing or pressing buttons inside the soundboard must never drive the class.
+      if (el && typeof el.closest === "function" && el.closest("[data-soundboard]")) return;
       if (e.code === "Space") {
         e.preventDefault();
         handleNext();
@@ -1109,7 +1136,12 @@ function FairTurns() {
             height: Math.max(1, MINI_PIP_OUTER_SIZE.height - frame.height),
           }
         : MINI_PIP_CONTENT_SIZE;
-      const w = await dpip.requestWindow(miniView === "mini" ? miniContentSize : { width: 320, height: 320 });
+      const soundsContentSize = frame
+        ? { width: Math.max(1, soundsOuterSize().width - frame.width), height: Math.max(1, soundsOuterSize().height - frame.height) }
+        : { width: 400, height: 560 };
+      const w = await dpip.requestWindow(
+        miniView === "mini" ? miniContentSize : miniView === "sounds" ? soundsContentSize : { width: 320, height: 320 },
+      );
       document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
         w.document.head.appendChild(node.cloneNode(true));
       });
@@ -1138,6 +1170,40 @@ function FairTurns() {
     }
     setShowRoster(false);
     setMiniView("mini");
+  };
+
+  const soundsOuterSize = (win?: Window | null) => {
+    const scr = (win ?? window).screen;
+    return {
+      width: Math.min(SOUNDS_PIP_OUTER_SIZE.width, scr?.availWidth || SOUNDS_PIP_OUTER_SIZE.width),
+      height: Math.min(SOUNDS_PIP_OUTER_SIZE.height, scr?.availHeight || SOUNDS_PIP_OUTER_SIZE.height),
+    };
+  };
+
+  const openSounds = () => {
+    if (miniView === "sounds") return;
+    soundsSource.current = { view: miniView, size: pipWin ? { width: pipWin.outerWidth, height: pipWin.outerHeight } : null };
+    if (pipWin) {
+      pipFrameSize.current = {
+        width: Math.max(0, pipWin.outerWidth - pipWin.innerWidth),
+        height: Math.max(0, pipWin.outerHeight - pipWin.innerHeight),
+      };
+      const size = soundsOuterSize(pipWin);
+      try { pipWin.resizeTo(size.width, size.height); } catch { /* Keep the same PiP window if resize is blocked. */ }
+    }
+    setShowRoster(false);
+    setMiniView("sounds");
+  };
+
+  const closeSounds = () => {
+    const { view, size } = soundsSource.current;
+    setMiniView(view);
+    if (pipWin) {
+      const target = size ?? (view === "mini" ? MINI_PIP_OUTER_SIZE : null);
+      if (target) {
+        try { pipWin.resizeTo(target.width, target.height); } catch { /* Keep the same PiP window if resize is blocked. */ }
+      }
+    }
   };
 
   const expandMiniView = () => {
@@ -1700,9 +1766,21 @@ function FairTurns() {
   );
 
   const miniNoTimer = noTimer || (!afMode && !useTimer);
+  const soundsButtonSmall = (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={`h-6 w-6 shrink-0 rounded-md ${playingEffect ? "bg-primary text-primary-foreground hover:bg-primary/90" : "text-accent-foreground"}`}
+      onClick={openSounds}
+      title={playingEffect ? "Sonidos (efecto sonando)" : "Sonidos"}
+      aria-label="Sonidos"
+    >
+      <Music className={`h-3.5 w-3.5 ${playingEffect ? "animate-pulse" : ""}`} />
+    </Button>
+  );
   const ultraCompactView = (
     <div className="flex h-full min-h-0 w-full items-center overflow-hidden bg-background px-1.5 py-1 text-foreground">
-      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] items-center gap-1">
+      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto_auto_auto] items-center gap-1">
         <p
           className="min-w-0 truncate font-[family-name:var(--font-display)] text-lg font-extrabold leading-none text-primary"
           title={current?.name ?? "No student selected"}
@@ -1737,6 +1815,7 @@ function FairTurns() {
         >
           ✗
         </Button>
+        {soundsButtonSmall}
         <Button
           variant="ghost"
           size="icon"
@@ -1757,6 +1836,16 @@ function FairTurns() {
         <div className="flex min-w-0 items-center gap-1">
           <Button size="sm" className="h-8 rounded-lg px-2 text-xs font-bold" onClick={() => setMiniView("tally")}>
             Tally marks
+          </Button>
+          <Button
+            size="sm"
+            variant={playingEffect ? "default" : "outline"}
+            className="h-8 rounded-lg px-2 text-xs font-bold"
+            onClick={openSounds}
+            aria-label="Sonidos"
+            title={playingEffect ? "Sonidos (efecto sonando)" : "Sonidos"}
+          >
+            <Music className={`h-3.5 w-3.5 ${playingEffect ? "animate-pulse" : ""}`} /> Sonidos
           </Button>
           <Button size="sm" variant="outline" className="h-8 rounded-lg px-2 text-xs font-bold" onClick={showMiniView} title="Open ultra-compact controls">
             <Minimize2 className="h-3.5 w-3.5" /> Mini
@@ -1827,7 +1916,38 @@ function FairTurns() {
     </div>
   );
 
-  const mini = miniView === "tally" ? tallyView : miniView === "mini" ? ultraCompactView : controlsView;
+  const soundsView = (
+    <Soundboard
+      playing={playingEffect}
+      onPlay={(id) => void soundEngine.current!.play(id)}
+      onStop={() => soundEngine.current!.stop()}
+      volume={soundPrefs.volume}
+      onVolume={(volume) => setSoundPrefs((p) => ({ ...p, volume }))}
+      links={soundPrefs.links}
+      onLinksChange={(links) => setSoundPrefs((p) => ({ ...p, links }))}
+      backLabel={soundsSource.current.view === "mini" ? "Volver a Mini" : "Volver a controles"}
+      onBack={closeSounds}
+      footer={
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2">
+          <p className="min-w-0 truncate font-[family-name:var(--font-display)] text-xl font-extrabold text-primary" title={current?.name ?? "No student selected"}>
+            {current?.name ?? "—"}
+          </p>
+          <p className={`font-[family-name:var(--font-display)] text-lg font-extrabold tabular-nums ${miniNoTimer ? "text-accent-foreground" : timeColor}`} aria-label={miniNoTimer ? "No timer" : `Time remaining ${mmss(remaining)}`}>
+            {miniNoTimer ? "∞" : mmss(remaining)}
+          </p>
+          <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-10 rounded-xl px-4 text-base font-extrabold" aria-label="Next — confirms the current turn">
+            NEXT
+          </Button>
+          <Button variant="outline" size="icon" className="h-10 w-10 rounded-full text-base font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Skip this turn" aria-label="Skip this turn">
+            ✗
+          </Button>
+        </div>
+      }
+    />
+  );
+
+  const mini =
+    miniView === "tally" ? tallyView : miniView === "mini" ? ultraCompactView : miniView === "sounds" ? soundsView : controlsView;
 
   const pipPortal = pipWin ? createPortal(mini, pipWin.document.body) : null;
 
