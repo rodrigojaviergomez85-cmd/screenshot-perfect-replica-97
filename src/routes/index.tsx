@@ -1531,11 +1531,11 @@ function FairTurns() {
   );
 
   const modeControls = (
-    <div className="flex flex-wrap items-center justify-center gap-1 text-xs">
-      <Button size="sm" variant={afMode ? "outline" : "default"} className="h-6 rounded-md px-2 text-xs font-bold" onClick={() => switchMode(false)}>Normal</Button>
-      <Button size="sm" variant={afMode ? "default" : "outline"} className="h-6 rounded-md px-2 text-xs font-bold" onClick={() => switchMode(true)} title="Automatic Fluency">Automatic Fluency</Button>
+    <div className="grid grid-cols-2 gap-1 text-xs">
+      <Button size="sm" variant={afMode ? "secondary" : "default"} className="h-9 rounded-lg px-2 text-xs font-bold" onClick={() => switchMode(false)}>Normal</Button>
+      <Button size="sm" variant={afMode ? "default" : "secondary"} className="h-9 rounded-lg px-2 text-xs font-bold" onClick={() => switchMode(true)} title="Automatic Fluency">Automatic Fluency</Button>
       {afMode && (
-        <>
+        <div className="col-span-2 mt-1 flex flex-wrap items-center gap-1">
           {([30, 45] as const).map((n) => (
             <Button key={`s${n}`} size="sm" variant={afSeconds === n ? "default" : "outline"} className="h-6 min-w-10 rounded-md px-2 text-xs font-bold"
               onClick={() => setAfSeconds(n)} aria-label={`${n} seconds per turn`}>{n}s</Button>
@@ -1549,7 +1549,7 @@ function FairTurns() {
               }}
               className="h-6 w-14 rounded-md border border-input bg-background px-1 text-xs text-foreground" aria-label="Automatic Fluency seconds" />s
           </label>
-        </>
+        </div>
       )}
     </div>
   );
@@ -1593,35 +1593,72 @@ function FairTurns() {
   );
 
   const activeClassName = classes.find((c) => c.id === activeClassId)?.name ?? "Fair Turns";
+  const presentRoster = students.filter((s) => !isAbsent(s));
+  const absentRoster = students.filter(isAbsent);
+
+  const themeSelect = (
+    <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-muted-foreground">
+      <span>Theme</span>
+      <select
+        value={themePreference}
+        onChange={(event) => setThemePreference(event.target.value as ThemePreference)}
+        aria-label="Theme"
+        className="h-9 rounded-lg border border-input bg-card px-3 text-sm font-semibold text-card-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+  );
+
+  const miniTabs = (
+    <div className="grid shrink-0 grid-cols-2 gap-1 rounded-xl bg-secondary p-1" role="tablist" aria-label="Floating window view">
+      <Button type="button" variant={miniView === "controls" ? "outline" : "ghost"} className="h-9 rounded-lg text-sm font-bold shadow-none" role="tab" aria-selected={miniView === "controls"} onClick={() => setMiniView("controls")}>
+        <SlidersHorizontal className="h-4 w-4" /> Controls
+      </Button>
+      <Button type="button" variant={miniView === "tally" ? "outline" : "ghost"} className="h-9 rounded-lg text-sm font-bold shadow-none" role="tab" aria-selected={miniView === "tally"} onClick={() => setMiniView("tally")}>
+        <List className="h-4 w-4" /> Tally marks
+      </Button>
+    </div>
+  );
+
+  const renderMiniStudentRow = (s: Student, absent = false) => {
+    const isCur = s.id === currentId;
+    return (
+      <li key={s.id} className={`grid grid-cols-[minmax(0,1fr)_minmax(4.5rem,auto)_2rem] items-center gap-2 rounded-xl px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground"} ${absent ? "opacity-65" : ""}`}>
+        <button type="button" onClick={() => manualPick(s.id)} className={`min-w-0 truncate text-left font-bold ${absent ? "line-through" : ""}`} title={`Pick ${s.name}`}>
+          {s.name}{isCur ? " · Now" : ""}{s.afWeek === week ? " · AF ✓" : ""}
+        </button>
+        <span className="flex min-w-0 flex-wrap justify-start gap-y-1"><Tally count={s.total} /></span>
+        {absenceButton(s, true)}
+      </li>
+    );
+  };
+
+  const absentSection = absentRoster.length > 0 && (
+    <div className="shrink-0 border-t border-border pt-1">
+      <Button type="button" variant="ghost" className="grid h-9 w-full grid-cols-[minmax(0,1fr)_auto] rounded-lg px-2 text-left text-xs font-semibold" aria-expanded={absentOpen} onClick={() => setAbsentOpen((open) => !open)}>
+        <span>Absent ({absentRoster.length})</span>
+        <ChevronDown className={`h-4 w-4 transition-transform ${absentOpen ? "rotate-180" : ""}`} />
+      </Button>
+      {absentOpen && <ul className="space-y-1 pt-1">{absentRoster.map((s) => renderMiniStudentRow(s, true))}</ul>}
+    </div>
+  );
 
   const tallyView = (
-    <div className="flex h-full min-h-0 w-full flex-col gap-2 bg-background p-2 text-foreground">
-      <div className="flex shrink-0 items-center gap-2">
-        <Button size="sm" variant="outline" className="h-8 shrink-0 rounded-lg px-2 text-xs font-bold" onClick={() => setMiniView("controls")}>
-          <ChevronLeft className="h-4 w-4" /> Controls
-        </Button>
-        <p className="min-w-0 flex-1 truncate text-right text-sm font-extrabold">{activeClassName}</p>
+    <div className="flex h-full min-h-0 w-full flex-col gap-2 bg-background p-3 text-foreground">
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <p className="truncate text-sm font-extrabold">{activeClassName}</p>
+        <span className="flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs font-bold"><Users className="h-3.5 w-3.5" /> {presentRoster.length}/{students.length}</span>
       </div>
+      {miniTabs}
       {noticeLine}
-      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-1" aria-label="Tally marks today">
-        {students.map((s) => {
-          const absent = isAbsent(s);
-          const isCur = s.id === currentId;
-          return (
-            <li key={s.id} className={`grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card"} ${absent ? "opacity-50" : ""}`}>
-              <span className="flex min-w-0 items-center gap-1">
-                <button type="button" onClick={() => manualPick(s.id)} className={`truncate text-left font-bold ${absent ? "line-through" : ""}`} title={`Pick ${s.name}`}>{s.name}</button>
-                {absenceButton(s, true)}
-                {absent && <span className="shrink-0 text-[10px] font-semibold">absent</span>}
-                {s.afWeek === week && <span className="shrink-0 text-[10px] font-bold">AF ✓</span>}
-              </span>
-              <span className="flex min-h-4 min-w-0">
-                <Tally count={s.total} className="flex-wrap gap-y-1" />
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1" aria-label="Tally marks today">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(4.5rem,auto)_2rem] gap-2 px-2 pb-1 text-[10px] font-semibold text-muted-foreground"><span>Student</span><span>Today</span><span /></div>
+        <ul className="space-y-1">{presentRoster.map((s) => renderMiniStudentRow(s))}</ul>
+        {absentSection}
+      </div>
       <div className="flex shrink-0 items-center gap-2">
         <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-9 flex-1 rounded-xl text-base font-extrabold">
           NEXT
@@ -1636,31 +1673,24 @@ function FairTurns() {
   );
 
   const mini = miniView === "tally" ? tallyView : (
-    <div className="relative flex h-full min-h-0 w-full flex-col justify-between gap-2 bg-background p-3 text-foreground">
-      <div className="flex items-center justify-between gap-2">
-        <Button size="sm" className="h-8 rounded-lg px-3 text-xs font-bold" onClick={() => setMiniView("tally")}>
-          Tally marks
-        </Button>
-        <button
-          onClick={() => setShowRoster((v) => !v)}
-          className="z-10 flex items-center gap-1 rounded-lg bg-secondary px-2 py-0.5 text-xs font-bold text-secondary-foreground"
-          aria-label="Roster"
-        >
-          <Users className="h-3.5 w-3.5" /> {students.length}
-        </button>
+    <div className="relative flex h-full min-h-0 w-full flex-col gap-2 bg-background p-3 text-foreground">
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <p className="truncate text-sm font-extrabold">{activeClassName}</p>
+        <span className="flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs font-bold"><Users className="h-3.5 w-3.5" /> {presentRoster.length}/{students.length}</span>
       </div>
+      {miniTabs}
       {banner?.message && (
         <div className={`truncate rounded-lg bg-primary px-2 py-1 text-center text-xs font-bold text-primary-foreground ${banner.exiting ? "animate-banner-out" : "animate-banner-in"}`}>
           {banner.message}
         </div>
       )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
       <p
         key={current ? current.id + String(current.total) : "empty"}
         className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight text-primary"
       >
         {current?.name ?? "—"}
       </p>
-      {showRoster && rosterPanel}
       {(useTimer || afMode) && (
         <div className="space-y-1">
           <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
@@ -1674,31 +1704,20 @@ function FairTurns() {
               />
             </div>
           </div>
-          {!afMode && timerLengthControls}
         </div>
       )}
-      {modeControls}
-      <div className="flex items-center gap-2">
-        <Button
-          onClick={handleNext}
-          disabled={presentStudents.length === 0}
-          className="h-12 flex-1 rounded-2xl text-xl font-extrabold tracking-wide"
-        >
-          NEXT
-        </Button>
-        <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate">
-          ✗
-        </Button>
-        {(useTimer || afMode) && (
-          <>
-            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
-              {timerRunning ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-            </Button>
-            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={resetTimer} aria-label="Reset">
-              <RotateCcw className="h-5 w-5" />
-            </Button>
-          </>
-        )}
+      <div className="mt-3 rounded-xl border border-border bg-card p-2 text-card-foreground">
+        <p className="mb-1 text-[10px] font-semibold text-muted-foreground">Mode</p>
+        {modeControls}
+        {!afMode && <><p className="mb-1 mt-2 text-[10px] font-semibold text-muted-foreground">Time per turn</p>{timerLengthControls}</>}
+      </div>
+      </div>
+      <div className="shrink-0 space-y-1.5">
+      <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-12 w-full rounded-2xl text-xl font-extrabold tracking-wide">NEXT</Button>
+      <div className="grid grid-cols-3 gap-1.5">
+        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate"><X className="h-4 w-4" /> Skip</Button>
+        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>{timerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}{timerRunning ? "Pause" : "Resume"}</Button>
+        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={resetTimer} aria-label="Reset"><RotateCcw className="h-4 w-4" /> Reset</Button>
       </div>
       {skipUndo && (
         <button onClick={undoSkip} className="text-center text-xs font-bold text-primary underline">Undo skip</button>
@@ -1706,6 +1725,7 @@ function FairTurns() {
       <p className="text-center text-xs font-semibold text-muted-foreground">
         {afProgress ?? `Round ${round} · ${doneCount}/${presentStudents.length} · ${noTimer ? "no timer" : `${turnSeconds}s`}`}
       </p>
+      </div>
     </div>
   );
 
