@@ -718,10 +718,10 @@ function FairTurns() {
   };
 
   useEffect(() => {
-    if (screen !== "class" || afMode || !roundComplete) return;
+    if (screen !== "class" || !roundComplete) return;
     showRoundBanner(round);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roundComplete, screen, round, afMode]);
+  }, [roundComplete, screen, round]);
 
   /** When NEXT/manual opens round N+1, the outgoing last turn resolves round N: announce it (once) instead of hiding. */
   const onOpenNewRound = () => {
@@ -837,7 +837,8 @@ function FairTurns() {
     let pool = present.filter((s) => !afQueue.includes(s.id));
     if (pool.length === 0) {
       // New cycle: skips expire, so anyone still without AF this week keeps priority.
-      const freshAll = present.filter((s) => s.afWeek !== week && s.id !== curId);
+      // A skipped student never had their turn, so they are not "the current one" to avoid here.
+      const freshAll = present.filter((s) => s.afWeek !== week && (s.id !== curId || skipped.includes(s.id)));
       if (freshAll.length > 0) return { phase: "fresh", ids: freshAll.map((s) => s.id), reset: true };
       pool = present; reset = true;
     }
@@ -932,7 +933,7 @@ function FairTurns() {
     clearSkipUndo();
     setPickNotice(null);
     setStudents(confirmTurn(students, pend.normal, "normal", classDay, week));
-    if (startsNewRound) { setBanner(null); setRound((r) => r + 1); }
+    if (startsNewRound) { onOpenNewRound(); setRound((r) => r + 1); }
     commitPick(target, startsNewRound);
   };
 
@@ -976,7 +977,7 @@ function FairTurns() {
     // NEXT confirms the outgoing turn exactly once, then shows the next student uncredited.
     setStudents(confirmTurn(students, pend.normal, "normal", classDay, week));
     if (startsNewRound) {
-      setBanner(null);
+      onOpenNewRound();
       setRound((r) => r + 1);
     }
     commitPick(picked, startsNewRound);
@@ -996,8 +997,9 @@ function FairTurns() {
       setAfSkipped(skipped);
       setPend((x) => ({ ...x, af: null }));
       const { phase, ids, reset } = afEligible(students, p.id, skipped);
-      const pool = ids.filter((x) => !skipped.includes(x));
-      if (pool.length > 0) { afCommit(students, pool[Math.floor(Math.random() * pool.length)]!, phase, reset); if (reset) setAfSkipped([p.id]); return; }
+      // Skip never resets a cycle: only unvisited candidates of the current cycle; otherwise end it and wait for NEXT.
+      const pool = reset ? [] : ids.filter((x) => !skipped.includes(x));
+      if (pool.length > 0) { afCommit(students, pool[Math.floor(Math.random() * pool.length)]!, phase, false); return; }
       setTimerRunning(false); setTimeUp(false);
       return;
     }
@@ -1606,7 +1608,7 @@ function FairTurns() {
             <Tally count={s.total} className="flex-1 text-foreground/70" />
             {s.skippedThisRound ? (
               <span className="text-xs font-bold text-muted-foreground" aria-label="Skipped this turn">✗</span>
-            ) : s.doneThisRound && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
+            ) : participatedThisRound(s) && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
           </li>
         ))}
       </ul>
@@ -1931,7 +1933,7 @@ function FairTurns() {
                     key={s.id}
                     className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-base font-semibold transition-colors ${cls}`}
                   >
-                    {s.doneThisRound && !isCurrent && (s.skippedThisRound ? <span aria-label="Skipped this turn" className="text-muted-foreground">✗</span> : <span aria-hidden>✓</span>)}
+                    {!isCurrent && (s.skippedThisRound || participatedThisRound(s)) && (s.skippedThisRound ? <span aria-label="Skipped this turn" className="text-muted-foreground">✗</span> : <span aria-hidden>✓</span>)}
                     <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}>{s.name}</button>
                     {absenceButton(s)}
                     {s.afWeek === week && <span className="text-xs font-bold">AF ✓</span>}
