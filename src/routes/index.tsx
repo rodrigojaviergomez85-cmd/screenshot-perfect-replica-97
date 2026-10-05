@@ -45,6 +45,9 @@ type Student = {
 
 type Screen = "home" | "setup" | "class" | "summary";
 
+const MINI_PIP_CONTENT_SIZE = { width: 320, height: 56 } as const;
+const MINI_PIP_OUTER_SIZE = { width: 320, height: 96 } as const;
+
 const CLASS_STORAGE_KEY = "fair-turns-class"; // legacy single-class key, migrated once
 const CLASSES_STORAGE_KEY = "fair-turns-classes";
 
@@ -1092,7 +1095,8 @@ function FairTurns() {
     const dpip = (window as unknown as { documentPictureInPicture?: { requestWindow: (o: { width: number; height: number }) => Promise<Window> } }).documentPictureInPicture;
     if (!dpip) return;
     try {
-      const w = await dpip.requestWindow(miniView === "mini" ? { width: 420, height: 150 } : { width: 320, height: 320 });
+      // requestWindow sizes the content viewport, while resizeTo uses the outer window.
+      const w = await dpip.requestWindow(miniView === "mini" ? MINI_PIP_CONTENT_SIZE : { width: 320, height: 320 });
       document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
         w.document.head.appendChild(node.cloneNode(true));
       });
@@ -1112,7 +1116,7 @@ function FairTurns() {
   const showMiniView = () => {
     if (pipWin) {
       pipExpandedSize.current = { width: pipWin.outerWidth, height: pipWin.outerHeight };
-      try { pipWin.resizeTo(420, 150); } catch { /* The browser may enforce its own PiP minimums. */ }
+      try { pipWin.resizeTo(MINI_PIP_OUTER_SIZE.width, MINI_PIP_OUTER_SIZE.height); } catch { /* The browser may enforce its own PiP minimums. */ }
     }
     setShowRoster(false);
     setMiniView("mini");
@@ -1679,27 +1683,17 @@ function FairTurns() {
 
   const miniNoTimer = noTimer || (!afMode && !useTimer);
   const ultraCompactView = (
-    <div className="relative flex h-full min-h-0 w-full items-center overflow-hidden bg-background px-2 py-3 text-foreground">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="absolute right-0.5 top-0.5 z-10 h-6 w-6 rounded-md text-accent-foreground"
-        onClick={expandMiniView}
-        title="Expand controls"
-        aria-label="Expand controls"
-      >
-        <Maximize2 className="h-3.5 w-3.5" />
-      </Button>
-      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-1.5 pt-2">
+    <div className="flex h-full min-h-0 w-full items-center overflow-hidden bg-background px-1.5 py-1 text-foreground">
+      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] items-center gap-1">
         <p
-          className="min-w-0 truncate font-[family-name:var(--font-display)] text-2xl font-extrabold leading-none text-primary sm:text-3xl"
+          className="min-w-0 truncate font-[family-name:var(--font-display)] text-lg font-extrabold leading-none text-primary"
           title={current?.name ?? "No student selected"}
           aria-label={`Current student: ${current?.name ?? "none"}`}
         >
           {current?.name ?? "—"}
         </p>
         <p
-          className={`shrink-0 font-[family-name:var(--font-display)] text-xl font-extrabold leading-none tabular-nums sm:text-2xl ${miniNoTimer ? "text-accent-foreground" : timeColor}`}
+          className={`shrink-0 font-[family-name:var(--font-display)] text-lg font-extrabold leading-none tabular-nums ${miniNoTimer ? "text-accent-foreground" : timeColor}`}
           title={miniNoTimer ? "No timer" : `Time remaining ${mmss(remaining)}`}
           aria-label={miniNoTimer ? "No timer" : `Time remaining ${mmss(remaining)}`}
         >
@@ -1708,7 +1702,7 @@ function FairTurns() {
         <Button
           onClick={handleNext}
           disabled={presentStudents.length === 0}
-          className="h-11 shrink-0 rounded-xl px-3 text-base font-extrabold sm:h-12 sm:px-5 sm:text-lg"
+          className="h-8 shrink-0 rounded-lg px-2.5 text-sm font-extrabold"
           title="Next — confirms the current turn"
           aria-label="Next — confirms the current turn"
         >
@@ -1717,13 +1711,23 @@ function FairTurns() {
         <Button
           variant="outline"
           size="icon"
-          className="h-11 w-11 shrink-0 rounded-full text-xl font-extrabold sm:h-12 sm:w-12"
+          className="h-8 w-8 shrink-0 rounded-full text-base font-extrabold"
           onClick={handleSkip}
           disabled={!canSkip}
           title="Skip this turn"
           aria-label="Skip this turn"
         >
           ✗
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0 rounded-md text-accent-foreground"
+          onClick={expandMiniView}
+          title="Expand controls"
+          aria-label="Expand controls"
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
         </Button>
       </div>
     </div>
