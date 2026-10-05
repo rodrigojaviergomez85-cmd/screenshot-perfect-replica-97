@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserX, Users, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, List, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, SlidersHorizontal, Trash2, UserCheck, UserX, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { isThemePreference, resolveTheme, THEME_STORAGE_KEY, type ThemePreference } from "@/lib/theme";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -346,6 +347,8 @@ function FairTurns() {
   const [editingTime, setEditingTime] = useState(false);
   const [customDraft, setCustomDraft] = useState("");
   const [accentColor, setAccentColor] = useState<AccentColor>("green");
+  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
+  const [systemIsDark, setSystemIsDark] = useState(false);
   const [coachMessages, setCoachMessages] = useState<string[]>([...COACH_MESSAGES]);
   const [showCoachMessages, setShowCoachMessages] = useState(true);
   const [deletedCoachMessage, setDeletedCoachMessage] = useState<{ message: string; index: number } | null>(null);
@@ -380,6 +383,7 @@ function FairTurns() {
   const [lastPicked, setLastPicked] = useState<Student | null>(null);
   const [showRoster, setShowRoster] = useState(false);
   const [miniView, setMiniView] = useState<"controls" | "tally">("controls");
+  const [absentOpen, setAbsentOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [closingMessage, setClosingMessage] = useState<string | null>(null);
   const [skipUndo, setSkipUndo] = useState<{
@@ -412,6 +416,8 @@ function FairTurns() {
       if (ACCENT_OPTIONS.some((option) => option.id === savedColor)) {
         setAccentColor(savedColor as AccentColor);
       }
+      const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (isThemePreference(savedTheme)) setThemePreference(savedTheme);
       const savedMessages = window.localStorage.getItem(MESSAGES_STORAGE_KEY);
       if (savedMessages) {
         const parsedMessages: unknown = JSON.parse(savedMessages);
@@ -469,6 +475,7 @@ function FairTurns() {
     if (!preferencesLoaded) return;
     try {
       window.localStorage.setItem(COLOR_STORAGE_KEY, accentColor);
+      window.localStorage.setItem(THEME_STORAGE_KEY, themePreference);
       window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(coachMessages));
       window.localStorage.setItem(SHOW_MESSAGES_STORAGE_KEY, String(showCoachMessages));
       window.localStorage.setItem(TIMER_STORAGE_KEY, String(turnSeconds));
@@ -477,7 +484,26 @@ function FairTurns() {
     } catch {
       /* The app remains fully usable when browser storage is unavailable. */
     }
-  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, turnSeconds, afSeconds]);
+  }, [accentColor, coachMessages, preferencesLoaded, showCoachMessages, themePreference, turnSeconds, afSeconds]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setSystemIsDark(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  const resolvedTheme = resolveTheme(themePreference, systemIsDark);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+    document.documentElement.dataset["theme"] = resolvedTheme;
+    if (pipWin) {
+      pipWin.document.documentElement.classList.toggle("dark", resolvedTheme === "dark");
+      pipWin.document.documentElement.dataset["theme"] = resolvedTheme;
+    }
+  }, [pipWin, resolvedTheme]);
 
   // Keep the active class entry in sync with live progress.
   useEffect(() => {
@@ -1046,6 +1072,7 @@ function FairTurns() {
       });
       w.document.documentElement.className = document.documentElement.className;
       w.document.documentElement.dataset["accent"] = accentColor;
+      w.document.documentElement.dataset["theme"] = resolvedTheme;
       w.document.body.style.margin = "0";
       w.document.body.style.height = "100vh";
       w.document.body.style.display = "flex";
@@ -1504,11 +1531,11 @@ function FairTurns() {
   );
 
   const modeControls = (
-    <div className="flex flex-wrap items-center justify-center gap-1 text-xs">
-      <Button size="sm" variant={afMode ? "outline" : "default"} className="h-6 rounded-md px-2 text-xs font-bold" onClick={() => switchMode(false)}>Normal</Button>
-      <Button size="sm" variant={afMode ? "default" : "outline"} className="h-6 rounded-md px-2 text-xs font-bold" onClick={() => switchMode(true)} title="Automatic Fluency">Automatic Fluency</Button>
+    <div className="grid grid-cols-2 gap-1 text-xs">
+      <Button size="sm" variant={afMode ? "secondary" : "default"} className="h-9 rounded-lg px-2 text-xs font-bold" onClick={() => switchMode(false)}>Normal</Button>
+      <Button size="sm" variant={afMode ? "default" : "secondary"} className="h-9 rounded-lg px-2 text-xs font-bold" onClick={() => switchMode(true)} title="Automatic Fluency">Automatic Fluency</Button>
       {afMode && (
-        <>
+        <div className="col-span-2 mt-1 flex flex-wrap items-center gap-1">
           {([30, 45] as const).map((n) => (
             <Button key={`s${n}`} size="sm" variant={afSeconds === n ? "default" : "outline"} className="h-6 min-w-10 rounded-md px-2 text-xs font-bold"
               onClick={() => setAfSeconds(n)} aria-label={`${n} seconds per turn`}>{n}s</Button>
@@ -1522,79 +1549,105 @@ function FairTurns() {
               }}
               className="h-6 w-14 rounded-md border border-input bg-background px-1 text-xs text-foreground" aria-label="Automatic Fluency seconds" />s
           </label>
-        </>
+        </div>
       )}
     </div>
   );
 
   const afProgress = afMode ? `AF · ${afSeconds}s` : null;
 
+  const activeClassName = classes.find((c) => c.id === activeClassId)?.name ?? "Fair Turns";
+  const presentRoster = students.filter((s) => !isAbsent(s));
+  const absentRoster = students.filter(isAbsent);
+
+  const themeSelect = (
+    <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-muted-foreground">
+      <span>Theme</span>
+      <select
+        value={themePreference}
+        onChange={(event) => setThemePreference(event.target.value as ThemePreference)}
+        aria-label="Theme"
+        className="h-9 rounded-lg border border-input bg-card px-3 text-sm font-semibold text-card-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+      </select>
+    </label>
+  );
+
+  const miniTabs = (
+    <div className="grid shrink-0 grid-cols-2 gap-1 rounded-xl bg-secondary p-1" role="tablist" aria-label="Floating window view">
+      <Button type="button" variant={miniView === "controls" ? "outline" : "ghost"} className="h-9 rounded-lg text-sm font-bold shadow-none" role="tab" aria-selected={miniView === "controls"} onClick={() => setMiniView("controls")}>
+        <SlidersHorizontal className="h-4 w-4" /> Controls
+      </Button>
+      <Button type="button" variant={miniView === "tally" ? "outline" : "ghost"} className="h-9 rounded-lg text-sm font-bold shadow-none" role="tab" aria-selected={miniView === "tally"} onClick={() => setMiniView("tally")}>
+        <List className="h-4 w-4" /> Tally marks
+      </Button>
+    </div>
+  );
+
   const rosterPanel = (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-xl border border-border bg-card p-2 text-card-foreground">
       <div className="flex gap-1">
-        <input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === "Enter") addStudent();
-          }}
-          placeholder="New student"
-          className="min-w-0 flex-1 rounded-lg border border-input bg-background px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
-        <Button size="sm" className="rounded-lg" onClick={addStudent}>Add</Button>
+        <input value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") addStudent(); }} placeholder="New student" className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+        <Button size="sm" className="h-8 rounded-lg" onClick={addStudent}>Add</Button>
       </div>
-      {noticeLine}
       <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto">
-        {students.map((s) => (
-          <li key={s.id} className="flex items-center gap-2 rounded-lg bg-secondary px-2 py-1 text-sm font-semibold text-secondary-foreground">
-            <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}
-              className={`truncate text-left ${isAbsent(s) ? "line-through opacity-50" : ""}`}>{s.name}</button>
-            {absenceButton(s, true)}
-            {s.afWeek === week && <span className="text-[10px] font-bold text-primary">AF ✓</span>}
-            <Tally count={s.total} className="flex-1 text-foreground/70" />
-            {s.skippedThisRound ? (
-              <span className="text-xs font-bold text-muted-foreground" aria-label="Didn't participate">✗</span>
-            ) : s.doneThisRound && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
-            <button onClick={() => removeStudent(s.id)} aria-label={`Remove ${s.name}`} className="rounded p-0.5 hover:bg-muted">
-              <X className="h-4 w-4" />
-            </button>
-          </li>
-        ))}
+        {students.map((s) => <li key={s.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-1 rounded-lg bg-secondary px-2 py-1 text-xs font-semibold"><button type="button" className={`truncate text-left ${isAbsent(s) ? "line-through opacity-60" : ""}`} onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}>{s.name}</button>{absenceButton(s, true)}<Button type="button" variant="ghost" size="icon" className="h-6 w-6 rounded-md" onClick={() => removeStudent(s.id)} aria-label={`Remove ${s.name}`}><X className="h-3.5 w-3.5" /></Button></li>)}
       </ul>
     </div>
   );
 
-  const activeClassName = classes.find((c) => c.id === activeClassId)?.name ?? "Fair Turns";
+  const renderMiniStudentRow = (s: Student, absent = false) => {
+    const isCur = s.id === currentId;
+    return (
+      <li key={s.id} className={`grid grid-cols-[minmax(0,1fr)_minmax(4.5rem,auto)_2rem] items-center gap-2 rounded-xl px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground"} ${absent ? "opacity-65" : ""}`}>
+        <button type="button" onClick={() => manualPick(s.id)} className={`min-w-0 truncate text-left font-bold ${absent ? "line-through" : ""}`} title={`Pick ${s.name}`}>
+          {s.name}{isCur ? " · Now" : ""}{s.afWeek === week ? " · AF ✓" : ""}
+        </button>
+        <span className="flex min-w-0 flex-wrap justify-start gap-y-1"><Tally count={s.total} /></span>
+        {absenceButton(s, true)}
+      </li>
+    );
+  };
+
+  const absentSection = absentRoster.length > 0 && (
+    <div className="shrink-0 border-t border-border pt-1">
+      <Button type="button" variant="ghost" className="grid h-9 w-full grid-cols-[minmax(0,1fr)_auto] rounded-lg px-2 text-left text-xs font-semibold" aria-expanded={absentOpen} onClick={() => setAbsentOpen((open) => !open)}>
+        <span>Absent ({absentRoster.length})</span>
+        <ChevronDown className={`h-4 w-4 transition-transform ${absentOpen ? "rotate-180" : ""}`} />
+      </Button>
+      {absentOpen && <ul className="space-y-1 pt-1">{absentRoster.map((s) => renderMiniStudentRow(s, true))}</ul>}
+    </div>
+  );
+
+  const renderWebStudentRow = (s: Student, absent = false) => {
+    const isCurrent = s.id === currentId;
+    return (
+      <li key={s.id} className={`grid min-h-11 grid-cols-[minmax(0,1fr)_minmax(5rem,auto)_2.25rem] items-center gap-2 rounded-xl px-2.5 py-1.5 transition-colors ${isCurrent ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"} ${absent ? "opacity-65" : ""}`}>
+        <button type="button" onClick={() => manualPick(s.id)} title={`Pick ${s.name}`} className={`min-w-0 truncate text-left text-sm font-bold ${absent ? "line-through" : ""}`}>
+          {s.name}{isCurrent ? " · Now" : ""}{s.afWeek === week ? " · AF ✓" : ""}
+        </button>
+        <span className="flex min-w-0 flex-wrap gap-y-1"><Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-foreground/80"} /></span>
+        <span className="flex justify-end">{absenceButton(s)}</span>
+      </li>
+    );
+  };
 
   const tallyView = (
-    <div className="flex h-full min-h-0 w-full flex-col gap-2 bg-background p-2 text-foreground">
-      <div className="flex shrink-0 items-center gap-2">
-        <Button size="sm" variant="outline" className="h-8 shrink-0 rounded-lg px-2 text-xs font-bold" onClick={() => setMiniView("controls")}>
-          <ChevronLeft className="h-4 w-4" /> Controls
-        </Button>
-        <p className="min-w-0 flex-1 truncate text-right text-sm font-extrabold">{activeClassName}</p>
+    <div className="flex h-full min-h-0 w-full flex-col gap-2 bg-background p-3 text-foreground">
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <p className="truncate text-sm font-extrabold">{activeClassName}</p>
+        <button type="button" onClick={() => setShowRoster((shown) => !shown)} className="flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs font-bold" title="Add or remove students" aria-label="Add or remove students"><Users className="h-3.5 w-3.5" /> {presentRoster.length}/{students.length}</button>
       </div>
+      {miniTabs}
       {noticeLine}
-      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto overflow-x-hidden pr-1" aria-label="Tally marks today">
-        {students.map((s) => {
-          const absent = isAbsent(s);
-          const isCur = s.id === currentId;
-          return (
-            <li key={s.id} className={`grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card"} ${absent ? "opacity-50" : ""}`}>
-              <span className="flex min-w-0 items-center gap-1">
-                <button type="button" onClick={() => manualPick(s.id)} className={`truncate text-left font-bold ${absent ? "line-through" : ""}`} title={`Pick ${s.name}`}>{s.name}</button>
-                {absenceButton(s, true)}
-                {absent && <span className="shrink-0 text-[10px] font-semibold">absent</span>}
-                {s.afWeek === week && <span className="shrink-0 text-[10px] font-bold">AF ✓</span>}
-              </span>
-              <span className="flex min-h-4 min-w-0">
-                <Tally count={s.total} className="flex-wrap gap-y-1" />
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1" aria-label="Tally marks today">
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(4.5rem,auto)_2rem] gap-2 px-2 pb-1 text-[10px] font-semibold text-muted-foreground"><span>Student</span><span>Today</span><span /></div>
+        <ul className="space-y-1">{presentRoster.map((s) => renderMiniStudentRow(s))}</ul>
+        {absentSection}
+      </div>
       <div className="flex shrink-0 items-center gap-2">
         <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-9 flex-1 rounded-xl text-base font-extrabold">
           NEXT
@@ -1609,31 +1662,25 @@ function FairTurns() {
   );
 
   const mini = miniView === "tally" ? tallyView : (
-    <div className="relative flex h-full min-h-0 w-full flex-col justify-between gap-2 bg-background p-3 text-foreground">
-      <div className="flex items-center justify-between gap-2">
-        <Button size="sm" className="h-8 rounded-lg px-3 text-xs font-bold" onClick={() => setMiniView("tally")}>
-          Tally marks
-        </Button>
-        <button
-          onClick={() => setShowRoster((v) => !v)}
-          className="z-10 flex items-center gap-1 rounded-lg bg-secondary px-2 py-0.5 text-xs font-bold text-secondary-foreground"
-          aria-label="Roster"
-        >
-          <Users className="h-3.5 w-3.5" /> {students.length}
-        </button>
+    <div className="relative flex h-full min-h-0 w-full flex-col gap-2 bg-background p-3 text-foreground">
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <p className="truncate text-sm font-extrabold">{activeClassName}</p>
+        <span className="flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs font-bold"><Users className="h-3.5 w-3.5" /> {presentRoster.length}/{students.length}</span>
       </div>
+      {miniTabs}
       {banner?.message && (
         <div className={`truncate rounded-lg bg-primary px-2 py-1 text-center text-xs font-bold text-primary-foreground ${banner.exiting ? "animate-banner-out" : "animate-banner-in"}`}>
           {banner.message}
         </div>
       )}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+      {showRoster ? rosterPanel : <>
       <p
         key={current ? current.id + String(current.total) : "empty"}
         className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight text-primary"
       >
         {current?.name ?? "—"}
       </p>
-      {showRoster && rosterPanel}
       {(useTimer || afMode) && (
         <div className="space-y-1">
           <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
@@ -1647,31 +1694,21 @@ function FairTurns() {
               />
             </div>
           </div>
-          {!afMode && timerLengthControls}
         </div>
       )}
-      {modeControls}
-      <div className="flex items-center gap-2">
-        <Button
-          onClick={handleNext}
-          disabled={presentStudents.length === 0}
-          className="h-12 flex-1 rounded-2xl text-xl font-extrabold tracking-wide"
-        >
-          NEXT
-        </Button>
-        <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate">
-          ✗
-        </Button>
-        {(useTimer || afMode) && (
-          <>
-            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
-              {timerRunning ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-            </Button>
-            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={resetTimer} aria-label="Reset">
-              <RotateCcw className="h-5 w-5" />
-            </Button>
-          </>
-        )}
+      <div className="mt-3 rounded-xl border border-border bg-card p-2 text-card-foreground">
+        <p className="mb-1 text-[10px] font-semibold text-muted-foreground">Mode</p>
+        {modeControls}
+        {!afMode && <><p className="mb-1 mt-2 text-[10px] font-semibold text-muted-foreground">Time per turn</p>{timerLengthControls}</>}
+      </div>
+      </>}
+      </div>
+      <div className="shrink-0 space-y-1.5">
+      <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-12 w-full rounded-2xl text-xl font-extrabold tracking-wide">NEXT</Button>
+      <div className="grid grid-cols-3 gap-1.5">
+        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate"><X className="h-4 w-4" /> Skip</Button>
+        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>{timerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}{timerRunning ? "Pause" : "Resume"}</Button>
+        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={resetTimer} aria-label="Reset"><RotateCcw className="h-4 w-4" /> Reset</Button>
       </div>
       {skipUndo && (
         <button onClick={undoSkip} className="text-center text-xs font-bold text-primary underline">Undo skip</button>
@@ -1679,6 +1716,7 @@ function FairTurns() {
       <p className="text-center text-xs font-semibold text-muted-foreground">
         {afProgress ?? `Round ${round} · ${doneCount}/${presentStudents.length} · ${noTimer ? "no timer" : `${turnSeconds}s`}`}
       </p>
+      </div>
     </div>
   );
 
@@ -1713,6 +1751,7 @@ function FairTurns() {
           </span>
         </div>
         <div className="col-span-full flex flex-wrap items-center justify-end gap-2 sm:col-span-1">
+          {themeSelect}
           {pipSupported ? (
             !pipWin && (
               <Button
@@ -1788,113 +1827,33 @@ function FairTurns() {
         </div>
       )}
 
-      <section className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-        <div className="stage-card flex min-h-[22rem] flex-col items-center justify-center gap-6 p-8 text-center">
-          {current ? (
-            <p
-              key={current.id + String(current.total)}
-              className="animate-pop-in font-[family-name:var(--font-display)] text-6xl font-extrabold leading-tight text-primary sm:text-8xl"
-            >
-              {current.name}
-            </p>
-          ) : (
-            <p className="text-2xl font-semibold text-muted-foreground">
-              Press NEXT to pick the first student
-            </p>
-          )}
-
-          <div className="flex w-full max-w-md items-center gap-3">
-            <Button
-              onClick={handleNext}
-              disabled={presentStudents.length === 0}
-              className="h-24 flex-1 rounded-3xl text-4xl font-extrabold tracking-wide"
-            >
-              NEXT
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleSkip}
-              disabled={!canSkip}
-              title="Didn't participate"
-              aria-label="Didn't participate"
-              className="h-24 w-24 rounded-3xl text-4xl font-extrabold"
-            >
-              ✗
-            </Button>
+      <section className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,1.65fr)_minmax(20rem,1fr)]">
+        <div className="soft-card flex min-h-[34rem] min-w-0 flex-col p-3 sm:p-4">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 pb-3">
+            <div className="min-w-0"><h2 className="truncate text-base font-extrabold">Today's participation</h2><p className="text-xs text-muted-foreground">Tap a name to select · attendance is separate</p></div>
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-secondary px-2.5 py-1 text-xs font-bold"><Users className="h-4 w-4" /> {presentRoster.length}/{students.length}</span>
           </div>
-          {skipUndo && (
-            <button onClick={undoSkip} className="text-sm font-bold text-primary underline">Undo skip</button>
-          )}
-          <p className="text-xs uppercase tracking-widest text-muted-foreground">
-            Space = next · X = skip · P = pause · T = time
-          </p>
+          {noticeLine}
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+            <ul className="grid gap-1.5 md:grid-cols-2">{presentRoster.map((s) => renderWebStudentRow(s))}</ul>
+            {absentRoster.length > 0 && <div className="mt-3 border-t border-border pt-1"><Button type="button" variant="ghost" className="grid h-10 w-full grid-cols-[minmax(0,1fr)_auto] rounded-lg px-2 text-left text-xs font-semibold" aria-expanded={absentOpen} onClick={() => setAbsentOpen((open) => !open)}><span>Absent ({absentRoster.length})</span><ChevronDown className={`h-4 w-4 transition-transform ${absentOpen ? "rotate-180" : ""}`} /></Button>{absentOpen && <ul className="grid gap-1.5 pt-1 md:grid-cols-2">{absentRoster.map((s) => renderWebStudentRow(s, true))}</ul>}</div>}
+          </div>
         </div>
 
-        <div className="flex flex-col gap-6">
-          {!useTimer && !afMode && <div className="soft-card p-4">{modeControls}</div>}
-          {(useTimer || afMode) && (
-            <div className="soft-card space-y-4 p-6 text-center">
-              <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
-                <p className={`font-[family-name:var(--font-display)] text-7xl font-extrabold tabular-nums ${timeColor}`}>
-                  {mmss(remaining)}
-                </p>
-                <div className="h-3 w-full overflow-hidden rounded-full bg-secondary">
-                  <div
-                    className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
-                    style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
-                  />
-                </div>
-              </div>
-              {modeControls}
-              {afProgress && <p className="text-sm font-bold text-primary">{afProgress}</p>}
-              {!afMode && timerLengthControls}
-              {!noTimer && timeUp && <p className="text-lg font-bold text-destructive">Time's up</p>}
-              <div className="flex justify-center gap-2">
-                <Button variant="outline" className="rounded-xl" onClick={toggleTimer} disabled={noTimer}>
-                  {timerRunning ? "Pause" : "Resume"}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-xl"
-                  onClick={resetTimer}
-                >
-                  Reset
-                </Button>
-              </div>
+        <div className="flex min-w-0 flex-col gap-3">
+          <div className="stage-card flex min-h-[23rem] flex-col justify-between gap-5 p-5 text-center sm:p-6">
+            <div className="flex min-h-36 flex-col items-center justify-center gap-3">
+              <p className="text-xs font-semibold text-muted-foreground">Current student</p>
+              {current ? <p key={current.id + String(current.total)} className="animate-pop-in max-w-full break-words font-[family-name:var(--font-display)] text-5xl font-extrabold leading-tight text-primary">{current.name}</p> : <p className="text-lg font-semibold text-muted-foreground">Press NEXT to pick the first student</p>}
+              {(useTimer || afMode) && <div className={`w-full ${noTimer ? "invisible" : ""}`} aria-hidden={noTimer || undefined}><p className={`font-[family-name:var(--font-display)] text-5xl font-extrabold tabular-nums ${timeColor}`}>{mmss(remaining)}</p><div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-secondary"><div className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`} style={{ width: `${Math.max(0, timeRatio * 100)}%` }} /></div></div>}
             </div>
-          )}
-
-          <div className="soft-card space-y-3 p-5">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
-              Roster
-            </h2>
-            <p className="text-xs text-muted-foreground">Tap a name to pick that student · tap the person icon to mark absent/present.</p>
-            {noticeLine}
-            <ul className="flex flex-wrap gap-2">
-              {students.map((s) => {
-                const isCurrent = s.id === currentId;
-                const cls = isCurrent
-                  ? "bg-primary text-primary-foreground"
-                  : isAbsent(s)
-                    ? "bg-muted text-muted-foreground line-through opacity-50"
-                  : s.doneThisRound
-                    ? "bg-muted text-muted-foreground"
-                    : "bg-secondary text-secondary-foreground";
-                return (
-                  <li
-                    key={s.id}
-                    className={`flex items-center gap-2 rounded-2xl px-3 py-2 text-base font-semibold transition-colors ${cls}`}
-                  >
-                    {s.doneThisRound && !isCurrent && (s.skippedThisRound ? <span aria-label="Didn't participate" className="text-muted-foreground">✗</span> : <span aria-hidden>✓</span>)}
-                    <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}>{s.name}</button>
-                    {absenceButton(s)}
-                    {s.afWeek === week && <span className="text-xs font-bold">AF ✓</span>}
-                    <Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-foreground/70"} />
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="text-left"><p className="mb-1 text-xs font-semibold text-muted-foreground">Mode</p>{modeControls}{!afMode && <><p className="mb-1 mt-3 text-xs font-semibold text-muted-foreground">Time per turn</p>{timerLengthControls}</>}{afProgress && <p className="mt-2 text-center text-xs font-bold text-primary">{afProgress}</p>}</div>
           </div>
+          <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-14 w-full rounded-2xl text-2xl font-extrabold tracking-wide">NEXT</Button>
+          <div className="grid grid-cols-3 gap-2"><Button variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate"><X className="h-4 w-4" /> Skip</Button><Button variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={toggleTimer} disabled={noTimer}>{timerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />} {timerRunning ? "Pause" : "Resume"}</Button><Button variant="outline" className="h-10 rounded-xl text-xs font-bold" onClick={resetTimer}><RotateCcw className="h-4 w-4" /> Reset</Button></div>
+          {skipUndo && <button onClick={undoSkip} className="text-center text-sm font-bold text-primary underline">Undo skip</button>}
+          {!noTimer && timeUp && <p className="text-center text-sm font-bold text-destructive">Time's up</p>}
+          <p className="text-center text-[10px] uppercase text-muted-foreground">Space = next · X = skip · P = pause · T = time</p>
         </div>
       </section>
     </main>
