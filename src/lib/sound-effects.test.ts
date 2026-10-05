@@ -46,3 +46,54 @@ describe("sound engine delayed resume", () => {
     e.stop();
   });
 });
+
+describe("recorded applause clip", () => {
+  function running() { const f = fakeCtx(); f.ctx.state = "running"; return f; }
+  const buf = { duration: 3 } as AudioBuffer;
+
+  it("stop during fetch/decode never plays late", async () => {
+    const f = running();
+    let done!: (b: AudioBuffer) => void;
+    const e = new SoundEngine(() => f.ctx as unknown as AudioContext, () => new Promise((r) => { done = r; }));
+    const p = e.play("aplausos");
+    await Promise.resolve();
+    e.stop();
+    done(buf);
+    await p;
+    expect(f.ctx.sources).toBe(0);
+    expect(e.playing).toBeNull();
+  });
+
+  it("a newer click during load wins", async () => {
+    const f = running();
+    let done!: (b: AudioBuffer) => void;
+    const e = new SoundEngine(() => f.ctx as unknown as AudioContext, () => new Promise((r) => { done = r; }));
+    const a = e.play("aplausos");
+    await Promise.resolve();
+    const b = e.play("correcto");
+    done(buf);
+    await Promise.all([a, b]);
+    expect(e.playing).toBe("correcto");
+    expect(f.ctx.sources).toBe(3);
+    e.stop();
+  });
+
+  it("load failure plays nothing, then retries and caches", async () => {
+    const f = running();
+    let calls = 0;
+    const e = new SoundEngine(() => f.ctx as unknown as AudioContext, async () => {
+      calls++;
+      if (calls === 1) throw new Error("offline");
+      return buf;
+    });
+    await e.play("aplausos");
+    expect(e.playing).toBeNull();
+    expect(f.ctx.sources).toBe(0);
+    await e.play("aplausos");
+    expect(e.playing).toBe("aplausos");
+    expect(f.ctx.sources).toBe(1);
+    await e.play("aplausos");
+    expect(calls).toBe(2);
+    e.stop();
+  });
+});
