@@ -15,3 +15,4 @@
 - Automatic Fluency weekly record (afWeek = Monday key) and today's absence (absentDay) live on each saved student, compared against the current week/day so stale values never count; this keeps per-class isolation without storing history.
 - Each saved class stores its Automatic Fluency cycle (week, queue, last pick); restore it only when the week matches, so mode switches, class switches and reloads never reopen a cycle.
 - Persist the appearance theme independently as System, Light, or Dark and mirror its resolved state into the floating document so every view stays visually synchronized.
+- Keep tally groups wrappable within bounded columns so names and attendance controls remain usable at 320px and with high participation totals.

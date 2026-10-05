@@ -121,7 +121,7 @@ function Tally({ count, className = "" }: { count: number; className?: string })
   const groups: number[] = [];
   for (let left = count; left > 0; left -= 5) groups.push(Math.min(5, left));
   return (
-    <span className={`inline-flex items-center gap-1.5 ${className}`} role="img" aria-label={`${count} participations today`}>
+    <span className={`flex max-w-full flex-wrap items-center gap-x-1.5 gap-y-1 ${className}`} role="img" aria-label={`${count} participations today`}>
       {groups.map((n, gi) => (
         <svg key={gi} width={n === 5 ? 22 : 4 + (n - 1) * 5} height="16" viewBox={`0 0 ${n === 5 ? 22 : 4 + (n - 1) * 5} 16`} aria-hidden className="shrink-0">
           {Array.from({ length: Math.min(n, 4) }, (_, i) => (
@@ -330,6 +330,7 @@ function TimerLengthControls({
 
 function FairTurns() {
   const [screen, setScreen] = useState<Screen>("home");
+  const [editingRoster, setEditingRoster] = useState(false);
   const [rosterText, setRosterText] = useState("");
   const [useTimer, setUseTimer] = useState(true);
   const [turnSeconds, setTurnSeconds] = useState(60);
@@ -356,6 +357,19 @@ function FairTurns() {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [classDay, setClassDay] = useState(() => localDay());
   const [classes, setClasses] = useState<SavedClass[]>([]);
+  useEffect(() => {
+    const sync = (e: StorageEvent) => {
+      if (e.key === CLASSES_STORAGE_KEY && e.newValue) {
+        try {
+          const { classes: raw } = JSON.parse(e.newValue);
+          const parsed = Array.isArray(raw) ? raw.map(normalizeClass).filter(Boolean) : [];
+          setClasses(parsed as SavedClass[]);
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, []);
   const [activeClassId, setActiveClassId] = useState<string | null>(null);
   /** Class actually loaded into the live session; only this one is ever synced back to storage. */
   const [loadedClassId, setLoadedClassId] = useState<string | null>(null);
@@ -608,6 +622,7 @@ function FairTurns() {
     setTimerRunning(false);
     setTimeUp(false);
     setScreen("class");
+    setEditingRoster(false);
   };
 
   const startClass = () => {
@@ -645,7 +660,7 @@ function FairTurns() {
     setSetupMode("new");
     setNewClassName("");
     setRosterText("");
-    setScreen("setup");
+    setEditingRoster(true);
   };
 
   const renameClass = (c: SavedClass) => {
@@ -1088,7 +1103,7 @@ function FairTurns() {
     setSetupMode("edit");
     setRosterText(students.map((s) => s.name).join("\n"));
     setTimerRunning(false);
-    setScreen("setup");
+    setEditingRoster(true);
   };
 
   const applyRosterEdits = () => {
@@ -1105,6 +1120,7 @@ function FairTurns() {
     });
     setCurrentId(null);
     setScreen("class");
+    setEditingRoster(false);
   };
 
   const updateCoachMessage = (index: number, value: string) => {
@@ -1578,10 +1594,10 @@ function FairTurns() {
 
   const miniTabs = (
     <div className="grid shrink-0 grid-cols-2 gap-1 rounded-xl bg-secondary p-1" role="tablist" aria-label="Floating window view">
-      <Button type="button" variant={miniView === "controls" ? "outline" : "ghost"} className="h-9 rounded-lg text-sm font-bold shadow-none" role="tab" aria-selected={miniView === "controls"} onClick={() => setMiniView("controls")}>
+      <Button type="button" variant={miniView === "controls" ? "outline" : "ghost"} className="h-9 rounded-lg text-sm font-bold shadow-none" role="tab" aria-selected={miniView === "controls"} onClick={() => { setMiniView("controls"); setShowRoster(false); }}>
         <SlidersHorizontal className="h-4 w-4" /> Controls
       </Button>
-      <Button type="button" variant={miniView === "tally" ? "outline" : "ghost"} className="h-9 rounded-lg text-sm font-bold shadow-none" role="tab" aria-selected={miniView === "tally"} onClick={() => setMiniView("tally")}>
+      <Button type="button" variant={miniView === "tally" ? "outline" : "ghost"} className="h-9 rounded-lg text-sm font-bold shadow-none" role="tab" aria-selected={miniView === "tally"} onClick={() => { setMiniView("tally"); setShowRoster(false); }}>
         <List className="h-4 w-4" /> Tally marks
       </Button>
     </div>
@@ -1589,6 +1605,12 @@ function FairTurns() {
 
   const rosterPanel = (
     <div className="flex min-h-0 flex-1 flex-col gap-2 rounded-xl border border-border bg-card p-2 text-card-foreground">
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <p className="truncate text-xs font-bold">Add or remove students</p>
+        <Button type="button" variant="ghost" size="sm" className="h-7 rounded-md px-2 text-xs" onClick={() => setShowRoster(false)}>
+          <ArrowLeft className="h-3.5 w-3.5" /> Back
+        </Button>
+      </div>
       <div className="flex gap-1">
         <input value={newName} onChange={(event) => setNewName(event.target.value)} onKeyDown={(event) => { event.stopPropagation(); if (event.key === "Enter") addStudent(); }} placeholder="New student" className="h-8 min-w-0 flex-1 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
         <Button size="sm" className="h-8 rounded-lg" onClick={addStudent}>Add</Button>
@@ -1602,11 +1624,11 @@ function FairTurns() {
   const renderMiniStudentRow = (s: Student, absent = false) => {
     const isCur = s.id === currentId;
     return (
-      <li key={s.id} className={`grid grid-cols-[minmax(0,1fr)_minmax(4.5rem,auto)_2rem] items-center gap-2 rounded-xl px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground"} ${absent ? "opacity-65" : ""}`}>
+      <li key={s.id} className={`grid min-h-10 grid-cols-[minmax(6.5rem,1fr)_minmax(0,7rem)_2rem] items-center gap-1.5 rounded-xl px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card text-card-foreground"} ${absent ? "opacity-65" : ""}`}>
         <button type="button" onClick={() => manualPick(s.id)} className={`min-w-0 truncate text-left font-bold ${absent ? "line-through" : ""}`} title={`Pick ${s.name}`}>
           {s.name}{isCur ? " · Now" : ""}{s.afWeek === week ? " · AF ✓" : ""}
         </button>
-        <span className="flex min-w-0 flex-wrap justify-start gap-y-1"><Tally count={s.total} /></span>
+        <span className="min-w-0 justify-self-stretch"><Tally count={s.total} className={isCur ? "text-primary-foreground" : "text-card-foreground"} /></span>
         {absenceButton(s, true)}
       </li>
     );
@@ -1625,11 +1647,11 @@ function FairTurns() {
   const renderWebStudentRow = (s: Student, absent = false) => {
     const isCurrent = s.id === currentId;
     return (
-      <li key={s.id} className={`grid min-h-11 grid-cols-[minmax(0,1fr)_minmax(5rem,auto)_2.25rem] items-center gap-2 rounded-xl px-2.5 py-1.5 transition-colors ${isCurrent ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"} ${absent ? "opacity-65" : ""}`}>
+      <li key={s.id} className={`grid min-h-11 grid-cols-[minmax(7rem,1fr)_minmax(0,8rem)_2.25rem] items-center gap-2 rounded-xl px-2.5 py-1.5 transition-colors ${isCurrent ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground"} ${absent ? "opacity-65" : ""}`}>
         <button type="button" onClick={() => manualPick(s.id)} title={`Pick ${s.name}`} className={`min-w-0 truncate text-left text-sm font-bold ${absent ? "line-through" : ""}`}>
           {s.name}{isCurrent ? " · Now" : ""}{s.afWeek === week ? " · AF ✓" : ""}
         </button>
-        <span className="flex min-w-0 flex-wrap gap-y-1"><Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-foreground/80"} /></span>
+        <span className="min-w-0 justify-self-stretch"><Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-secondary-foreground"} /></span>
         <span className="flex justify-end">{absenceButton(s)}</span>
       </li>
     );
@@ -1639,15 +1661,15 @@ function FairTurns() {
     <div className="flex h-full min-h-0 w-full flex-col gap-2 bg-background p-3 text-foreground">
       <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <p className="truncate text-sm font-extrabold">{activeClassName}</p>
-        <button type="button" onClick={() => setShowRoster((shown) => !shown)} className="flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs font-bold" title="Add or remove students" aria-label="Add or remove students"><Users className="h-3.5 w-3.5" /> {presentRoster.length}/{students.length}</button>
+        <Button type="button" variant="secondary" size="sm" onClick={() => setShowRoster(true)} className="h-7 rounded-full px-2 text-xs font-bold" title="Add or remove students" aria-label="Add or remove students"><Users className="h-3.5 w-3.5" /> {presentRoster.length}/{students.length}</Button>
       </div>
       {miniTabs}
       {noticeLine}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1" aria-label="Tally marks today">
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(4.5rem,auto)_2rem] gap-2 px-2 pb-1 text-[10px] font-semibold text-muted-foreground"><span>Student</span><span>Today</span><span /></div>
+      {showRoster ? rosterPanel : <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1" aria-label="Tally marks today">
+        <div className="grid grid-cols-[minmax(6.5rem,1fr)_minmax(0,7rem)_2rem] gap-1.5 px-2 pb-1 text-[10px] font-semibold text-muted-foreground"><span>Student</span><span>Today</span><span /></div>
         <ul className="space-y-1">{presentRoster.map((s) => renderMiniStudentRow(s))}</ul>
         {absentSection}
-      </div>
+      </div>}
       <div className="flex shrink-0 items-center gap-2">
         <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-9 flex-1 rounded-xl text-base font-extrabold">
           NEXT
@@ -1661,8 +1683,20 @@ function FairTurns() {
     </div>
   );
 
+  const miniCurrent = (
+      <div className="shrink-0 space-y-0.5">
+      <p key={current ? current.id + String(current.total) : "empty"} className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-2xl font-extrabold leading-tight text-primary" title={current?.name}>
+        {current?.name ?? "—"}
+      </p>
+      {(useTimer || afMode) && <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
+        <p className={`text-center text-xl font-extrabold tabular-nums ${timeColor}`}>{remaining === 0 && timeUp ? "Time's up" : mmss(remaining)}</p>
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary"><div className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`} style={{ width: `${Math.max(0, timeRatio * 100)}%` }} /></div>
+      </div>}
+    </div>
+  );
+
   const mini = miniView === "tally" ? tallyView : (
-    <div className="relative flex h-full min-h-0 w-full flex-col gap-2 bg-background p-3 text-foreground">
+    <div className="relative flex h-full min-h-0 w-full flex-col gap-1.5 bg-background p-3 text-foreground">
       <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
         <p className="truncate text-sm font-extrabold">{activeClassName}</p>
         <span className="flex items-center gap-1 rounded-full bg-secondary px-2 py-1 text-xs font-bold"><Users className="h-3.5 w-3.5" /> {presentRoster.length}/{students.length}</span>
@@ -1673,47 +1707,27 @@ function FairTurns() {
           {banner.message}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-      {showRoster ? rosterPanel : <>
-      <p
-        key={current ? current.id + String(current.total) : "empty"}
-        className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight text-primary"
-      >
-        {current?.name ?? "—"}
-      </p>
-      {(useTimer || afMode) && (
-        <div className="space-y-1">
-          <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
-            <p className={`text-center text-2xl font-extrabold tabular-nums ${timeColor}`}>
-              {remaining === 0 && timeUp ? "Time's up" : mmss(remaining)}
-            </p>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-              <div
-                className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
-                style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      {!showRoster && miniCurrent}
+      <div className="min-h-10 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+      {showRoster ? rosterPanel :
       <div className="mt-3 rounded-xl border border-border bg-card p-2 text-card-foreground">
         <p className="mb-1 text-[10px] font-semibold text-muted-foreground">Mode</p>
         {modeControls}
         {!afMode && <><p className="mb-1 mt-2 text-[10px] font-semibold text-muted-foreground">Time per turn</p>{timerLengthControls}</>}
       </div>
-      </>}
+      }
       </div>
-      <div className="shrink-0 space-y-1.5">
-      <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-12 w-full rounded-2xl text-xl font-extrabold tracking-wide">NEXT</Button>
+      <div className="shrink-0 space-y-1">
+      <Button onClick={handleNext} disabled={presentStudents.length === 0} className="h-10 w-full rounded-2xl text-xl font-extrabold tracking-wide">NEXT</Button>
       <div className="grid grid-cols-3 gap-1.5">
-        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate"><X className="h-4 w-4" /> Skip</Button>
-        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>{timerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}{timerRunning ? "Pause" : "Resume"}</Button>
-        <Button variant="outline" className="h-9 rounded-xl text-xs font-bold" onClick={resetTimer} aria-label="Reset"><RotateCcw className="h-4 w-4" /> Reset</Button>
+        <Button variant="outline" className="h-8 rounded-xl text-xs font-bold" onClick={handleSkip} disabled={!canSkip} title="Didn't participate" aria-label="Didn't participate"><X className="h-4 w-4" /> Skip</Button>
+        <Button variant="outline" className="h-8 rounded-xl px-1 text-xs font-bold tabular-nums" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>{timerRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}{!noTimer && `${mmss(remaining)} · `}{timerRunning ? "Pause" : "Resume"}</Button>
+        <Button variant="outline" className="h-8 rounded-xl text-xs font-bold" onClick={resetTimer} aria-label="Reset"><RotateCcw className="h-4 w-4" /> Reset</Button>
       </div>
       {skipUndo && (
         <button onClick={undoSkip} className="text-center text-xs font-bold text-primary underline">Undo skip</button>
       )}
-      <p className="text-center text-xs font-semibold text-muted-foreground">
+      <p className="truncate text-center text-[10px] font-semibold text-muted-foreground">
         {afProgress ?? `Round ${round} · ${doneCount}/${presentStudents.length} · ${noTimer ? "no timer" : `${turnSeconds}s`}`}
       </p>
       </div>
