@@ -134,3 +134,28 @@ export function toEmbedUrl(input: string): string | null {
   params.set("list", list);
   return `https://www.youtube.com/embed/videoseries?${params}`;
 }
+
+/**
+ * Same-origin wrapper page URL (public/youtube-player.html). Inside Document PiP the
+ * document is about:blank, so a direct YouTube iframe gets no valid Referer (Error 153);
+ * the wrapper is a real app-origin page that hosts the official embed instead.
+ */
+export function toPlayerWrapperUrl(input: string, appOrigin: string): string | null {
+  const embed = toEmbedUrl(input);
+  if (!embed) return null;
+  let origin: string;
+  try {
+    const o = new URL(appOrigin);
+    if (o.protocol !== "https:" && o.protocol !== "http:") return null;
+    origin = o.origin;
+  } catch {
+    return null;
+  }
+  const e = new URL(embed);
+  const id = e.pathname.split("/").filter(Boolean)[1];
+  const list = e.searchParams.get("list");
+  const params = new URLSearchParams();
+  if (id && id !== "videoseries") params.set("v", id);
+  if (list) params.set("list", list);
+  return `${origin}/youtube-player.html?${params}`;
+}
