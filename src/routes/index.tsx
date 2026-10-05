@@ -394,7 +394,8 @@ function FairTurns() {
   const [compact, setCompact] = useState(false);
   const [lastPicked, setLastPicked] = useState<Student | null>(null);
   const [showRoster, setShowRoster] = useState(false);
-  const [miniView, setMiniView] = useState<"controls" | "tally">("controls");
+  const [miniView, setMiniView] = useState<"controls" | "tally" | "mini">("controls");
+  const pipExpandedSize = useRef<{ width: number; height: number } | null>(null);
   const [newName, setNewName] = useState("");
   const [closingMessage, setClosingMessage] = useState<string | null>(null);
   const [skipUndo, setSkipUndo] = useState<{
@@ -1091,7 +1092,7 @@ function FairTurns() {
     const dpip = (window as unknown as { documentPictureInPicture?: { requestWindow: (o: { width: number; height: number }) => Promise<Window> } }).documentPictureInPicture;
     if (!dpip) return;
     try {
-      const w = await dpip.requestWindow({ width: 320, height: 320 });
+      const w = await dpip.requestWindow(miniView === "mini" ? { width: 420, height: 150 } : { width: 320, height: 320 });
       document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
         w.document.head.appendChild(node.cloneNode(true));
       });
@@ -1105,6 +1106,23 @@ function FairTurns() {
     } catch {
       setPipSupported(false);
       setCompact(true);
+    }
+  };
+
+  const showMiniView = () => {
+    if (pipWin) {
+      pipExpandedSize.current = { width: pipWin.outerWidth, height: pipWin.outerHeight };
+      try { pipWin.resizeTo(420, 150); } catch { /* The browser may enforce its own PiP minimums. */ }
+    }
+    setShowRoster(false);
+    setMiniView("mini");
+  };
+
+  const expandMiniView = () => {
+    setMiniView("controls");
+    const size = pipExpandedSize.current;
+    if (pipWin && size) {
+      try { pipWin.resizeTo(size.width, size.height); } catch { /* Keep the same PiP window if resize is blocked. */ }
     }
   };
 
@@ -1659,12 +1677,69 @@ function FairTurns() {
     </div>
   );
 
-  const mini = miniView === "tally" ? tallyView : (
+  const miniNoTimer = noTimer || (!afMode && !useTimer);
+  const ultraCompactView = (
+    <div className="relative flex h-full min-h-0 w-full items-center overflow-hidden bg-background px-2 py-3 text-foreground">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="absolute right-0.5 top-0.5 z-10 h-6 w-6 rounded-md text-accent-foreground"
+        onClick={expandMiniView}
+        title="Expand controls"
+        aria-label="Expand controls"
+      >
+        <Maximize2 className="h-3.5 w-3.5" />
+      </Button>
+      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-1.5 pt-2">
+        <p
+          className="min-w-0 truncate font-[family-name:var(--font-display)] text-2xl font-extrabold leading-none text-primary sm:text-3xl"
+          title={current?.name ?? "No student selected"}
+          aria-label={`Current student: ${current?.name ?? "none"}`}
+        >
+          {current?.name ?? "—"}
+        </p>
+        <p
+          className={`shrink-0 font-[family-name:var(--font-display)] text-xl font-extrabold leading-none tabular-nums sm:text-2xl ${miniNoTimer ? "text-accent-foreground" : timeColor}`}
+          title={miniNoTimer ? "No timer" : `Time remaining ${mmss(remaining)}`}
+          aria-label={miniNoTimer ? "No timer" : `Time remaining ${mmss(remaining)}`}
+        >
+          {miniNoTimer ? "∞" : mmss(remaining)}
+        </p>
+        <Button
+          onClick={handleNext}
+          disabled={presentStudents.length === 0}
+          className="h-11 shrink-0 rounded-xl px-3 text-base font-extrabold sm:h-12 sm:px-5 sm:text-lg"
+          title="Next — confirms the current turn"
+          aria-label="Next — confirms the current turn"
+        >
+          NEXT
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          className="h-11 w-11 shrink-0 rounded-full text-xl font-extrabold sm:h-12 sm:w-12"
+          onClick={handleSkip}
+          disabled={!canSkip}
+          title="Skip this turn"
+          aria-label="Skip this turn"
+        >
+          ✗
+        </Button>
+      </div>
+    </div>
+  );
+
+  const controlsView = (
     <div className="relative flex h-full min-h-0 w-full flex-col justify-between gap-2 bg-background p-3 text-foreground">
       <div className="flex items-center justify-between gap-2">
-        <Button size="sm" className="h-8 rounded-lg px-3 text-xs font-bold" onClick={() => setMiniView("tally")}>
-          Tally marks
-        </Button>
+        <div className="flex min-w-0 items-center gap-1">
+          <Button size="sm" className="h-8 rounded-lg px-2 text-xs font-bold" onClick={() => setMiniView("tally")}>
+            Tally marks
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 rounded-lg px-2 text-xs font-bold" onClick={showMiniView} title="Open ultra-compact controls">
+            <Minimize2 className="h-3.5 w-3.5" /> Mini
+          </Button>
+        </div>
         <button
           onClick={() => setShowRoster((v) => !v)}
           className="z-10 flex items-center gap-1 rounded-lg bg-secondary px-2 py-0.5 text-xs font-bold text-secondary-foreground"
@@ -1729,6 +1804,8 @@ function FairTurns() {
       </p>
     </div>
   );
+
+  const mini = miniView === "tally" ? tallyView : miniView === "mini" ? ultraCompactView : controlsView;
 
   const pipPortal = pipWin ? createPortal(mini, pipWin.document.body) : null;
 
