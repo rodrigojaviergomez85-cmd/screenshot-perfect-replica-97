@@ -43,7 +43,7 @@ export function restorePendings(raw: unknown, ids: Set<string>, today: string, w
     const t = p as Partial<PendingTurn>;
     if (typeof t.id !== "string" || !ids.has(t.id) || t.day !== today) return null;
     if (af && t.week !== week) return null;
-    return { id: t.id, day: t.day, ...(af ? { week: t.week } : { earnsRound: !!t.earnsRound }) };
+    return { id: t.id, day: t.day, ...(af ? { week: week } : { earnsRound: !!t.earnsRound }) };
   };
   const r = (raw && typeof raw === "object" ? raw : {}) as Partial<Record<"normal" | "af", unknown>>;
   return { normal: one(r.normal, false), af: one(r.af, true) };
