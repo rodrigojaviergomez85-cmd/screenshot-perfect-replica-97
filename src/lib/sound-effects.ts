@@ -2,7 +2,7 @@
  * Built-in classroom sound effects played locally with Web Audio.
  * Most are synthesized; Aplausos uses a CC0 recording bundled with the app (no third-party requests).
  */
-import applauseAsset from "@/assets/applause.mp3.asset.json";
+import applauseAsset from "@/assets/applause-congratulations.mp3.asset.json";
 export const EFFECTS = [
   { id: "aplausos", label: "Aplausos", emoji: "👏" },
   { id: "correcto", label: "Correcto", emoji: "⭐" },
