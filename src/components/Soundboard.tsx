@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ExternalLink, Pencil, Play, Plus, Square, Star, Trash2, Volume1, Volume2, X } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Play, Plus, Square, Star, Trash2, Volume1, Volume2, VolumeX, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EFFECTS, type EffectId } from "@/lib/sound-effects";
 import { sortLinks, toPlayerWrapperUrl, validateYouTubeUrl, type MusicLink } from "@/lib/music-links";
@@ -16,6 +16,8 @@ type Props = {
   onBack: () => void;
   footer: ReactNode;
   storageWarning?: boolean;
+  nextDing: boolean;
+  onNextDing: () => void;
 };
 
 type Draft = { id: string | null; name: string; url: string; error: string | null };

@@ -97,3 +97,38 @@ describe("recorded applause clip", () => {
     e.stop();
   });
 });
+
+import { NextDing } from "./sound-effects";
+describe("next ding", () => {
+  it("disabling during resume cancels the ding", async () => {
+    const f = fakeCtx();
+    const d = new NextDing(() => f.ctx as unknown as AudioContext);
+    const p = d.play();
+    d.setEnabled(false);
+    f.resolveResume();
+    await p;
+    expect(f.ctx.sources).toBe(0);
+  });
+  it("disabled plays nothing; rejected resume never throws", async () => {
+    const f = fakeCtx();
+    const d = new NextDing(() => f.ctx as unknown as AudioContext);
+    d.setEnabled(false);
+    await d.play();
+    expect(f.ctx.sources).toBe(0);
+    d.setEnabled(true);
+    f.ctx.resume = () => Promise.reject(new Error("no"));
+    await expect(d.play()).resolves.toBeUndefined();
+    expect(d.played).toBe(0);
+  });
+  it("rapid repeats do not stack: only the last pending plays", async () => {
+    const f = fakeCtx();
+    const resumes: (() => void)[] = [];
+    f.ctx.resume = () => new Promise<void>((r) => resumes.push(() => { f.ctx.state = "running"; r(); }));
+    const d = new NextDing(() => f.ctx as unknown as AudioContext);
+    const a = d.play(); const b = d.play();
+    resumes.forEach((r) => r());
+    await Promise.all([a, b]);
+    expect(d.played).toBe(1);
+    expect(f.ctx.sources).toBe(4);
+  });
+});

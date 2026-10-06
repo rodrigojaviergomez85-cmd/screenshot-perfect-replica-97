@@ -2,9 +2,9 @@
 export const SOUND_PREFS_KEY = "fair-participation-sounds-v1";
 
 export type MusicLink = { id: string; name: string; url: string; favorite: boolean; createdAt: number };
-export type SoundPrefs = { version: 1; volume: number; links: MusicLink[] };
+export type SoundPrefs = { version: 1; volume: number; links: MusicLink[]; nextDing: boolean };
 
-export const DEFAULT_SOUND_PREFS: SoundPrefs = { version: 1, volume: 0.7, links: [] };
+export const DEFAULT_SOUND_PREFS: SoundPrefs = { version: 1, volume: 0.7, links: [], nextDing: true };
 
 const HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"]);
 const VIDEO_ID = /^[A-Za-z0-9_-]{6,20}$/;
@@ -84,7 +84,7 @@ export function parseSoundPrefs(raw: string | null): SoundPrefs {
     return { ...DEFAULT_SOUND_PREFS, links: [] };
   }
   if (!data || typeof data !== "object") return { ...DEFAULT_SOUND_PREFS, links: [] };
-  const d = data as { volume?: unknown; links?: unknown };
+  const d = data as { volume?: unknown; links?: unknown; nextDing?: unknown };
   const volume = typeof d.volume === "number" && Number.isFinite(d.volume) ? Math.min(1, Math.max(0, d.volume)) : DEFAULT_SOUND_PREFS.volume;
   const links: MusicLink[] = [];
   const seen = new Set<string>();
@@ -106,7 +106,7 @@ export function parseSoundPrefs(raw: string | null): SoundPrefs {
       });
     }
   }
-  return { version: 1, volume, links };
+  return { version: 1, volume, links, nextDing: d.nextDing !== false };
 }
 
 /**
