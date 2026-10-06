@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, ExternalLink, Pencil, Play, Plus, Square, Star, Trash2, Volume1, Volume2, X } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Play, Plus, Square, Star, Trash2, Volume1, Volume2, VolumeX, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EFFECTS, type EffectId } from "@/lib/sound-effects";
 import { sortLinks, toPlayerWrapperUrl, validateYouTubeUrl, type MusicLink } from "@/lib/music-links";
@@ -16,11 +16,13 @@ type Props = {
   onBack: () => void;
   footer: ReactNode;
   storageWarning?: boolean;
+  nextDing: boolean;
+  onNextDing: () => void;
 };
 
 type Draft = { id: string | null; name: string; url: string; error: string | null };
 
-export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, onLinksChange, backLabel, onBack, footer, storageWarning }: Props) {
+export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, onLinksChange, backLabel, onBack, footer, storageWarning, nextDing, onNextDing }: Props) {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [undo, setUndo] = useState<{ link: MusicLink; index: number } | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -110,6 +112,17 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
               );
             })}
           </div>
+          <button
+            type="button"
+            onClick={onNextDing}
+            aria-pressed={nextDing}
+            title={nextDing ? "Sonido de NEXT: activado" : "Sonido de NEXT: desactivado"}
+            className="mt-2 flex w-full items-center gap-2 rounded-lg border border-border px-2 py-1 text-left text-xs font-semibold"
+          >
+            {nextDing ? <Volume2 className="h-4 w-4 shrink-0 text-primary" aria-hidden /> : <VolumeX className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />}
+            <span className="min-w-0 flex-1 truncate">Sonido de NEXT</span>
+            <span className="text-muted-foreground">{nextDing ? "On" : "Off"}</span>
+          </button>
           <div className="mt-2 flex items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground">Efectos</span>
             <Volume1 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />

@@ -34,8 +34,14 @@ describe("YouTube link validation", () => {
 });
 
 describe("sound prefs restore", () => {
+  it("NEXT ding defaults on, older saves stay on, saved off stays off", () => {
+    expect(parseSoundPrefs(null).nextDing).toBe(true);
+    expect(parseSoundPrefs(JSON.stringify({ volume: 0.3, links: [] })).nextDing).toBe(true);
+    expect(parseSoundPrefs(JSON.stringify({ volume: 0.3, links: [], nextDing: false })).nextDing).toBe(false);
+  });
+
   it("malformed JSON or missing data gives defaults", () => {
-    expect(parseSoundPrefs("{bad")).toEqual({ version: 1, volume: 0.7, links: [] });
+    expect(parseSoundPrefs("{bad")).toEqual({ version: 1, volume: 0.7, links: [], nextDing: true });
     expect(parseSoundPrefs(null).links).toEqual([]);
     expect(parseSoundPrefs("42").volume).toBe(0.7);
   });
@@ -75,7 +81,7 @@ describe("sound prefs load/save", () => {
     const prefs = { version: 1 as const, volume: 0.35, links: [
       { id: "a", name: "Warm-up", url: "https://youtu.be/dQw4w9WgXcQ", favorite: true, createdAt: 1 },
       { id: "b", name: "Juego", url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", favorite: false, createdAt: 2 },
-    ] };
+    ], nextDing: false };
     expect(saveSoundPrefs(s, prefs)).toBe(true);
     s.writes.length = 0;
     const loaded = loadSoundPrefs(s);
@@ -87,7 +93,7 @@ describe("sound prefs load/save", () => {
   it("unreadable storage is flagged so callers never overwrite it", () => {
     const bad = { getItem: () => { throw new Error("denied"); }, setItem: () => { throw new Error("denied"); } };
     expect(loadSoundPrefs(bad).readable).toBe(false);
-    expect(saveSoundPrefs(bad, { version: 1, volume: 0.5, links: [] })).toBe(false);
+    expect(saveSoundPrefs(bad, { version: 1, volume: 0.5, links: [], nextDing: true })).toBe(false);
     expect(SOUND_PREFS_KEY).toBe("fair-participation-sounds-v1");
   });
 });

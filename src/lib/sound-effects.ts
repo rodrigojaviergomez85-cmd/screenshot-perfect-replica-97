@@ -233,3 +233,71 @@ export class SoundEngine {
     }
   }
 }
+
+/**
+ * Short original two-note "next" ding, on its own AudioContext so it never stops
+ * soundboard effects or YouTube. Rapid repeats replace the previous ding; disabling
+ * cancels a ding still waiting on resume. Never throws or rejects.
+ */
+export class NextDing {
+  private ctx: AudioContext | null = null;
+  private nodes: AudioScheduledSourceNode[] = [];
+  private generation = 0;
+  enabled = true;
+  played = 0;
+  constructor(private readonly createContext?: () => AudioContext) {}
+
+  setEnabled(on: boolean) {
+    this.enabled = on;
+    if (!on) this.cancel();
+  }
+
+  cancel() {
+    this.generation++;
+    for (const n of this.nodes) {
+      try { n.stop(); } catch { /* ignore */ }
+      try { n.disconnect(); } catch { /* ignore */ }
+    }
+    this.nodes = [];
+  }
+
+  async play(): Promise<void> {
+    if (!this.enabled) return;
+    try {
+      if (!this.ctx) {
+        if (this.createContext) this.ctx = this.createContext();
+        else {
+          if (typeof window === "undefined") return;
+          const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+          if (!Ctor) return;
+          this.ctx = new Ctor();
+        }
+      }
+      const ctx = this.ctx;
+      this.cancel();
+      const token = this.generation;
+      if (ctx.state === "suspended") {
+        try { await ctx.resume(); } catch { return; }
+      }
+      if (token !== this.generation || !this.enabled) return;
+      const t = ctx.currentTime + 0.01;
+      // C6 then G6, soft sine with a faint triangle shimmer (~320 ms total).
+      ([[1046.5, 0, 0.14], [1567.98, 0.1, 0.22]] as const).forEach(([f, at, len]) => {
+        for (const [type, peak, mul] of [["sine", 0.22, 1], ["triangle", 0.04, 2]] as const) {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = type;
+          o.frequency.setValueAtTime(f * mul, t + at);
+          g.gain.setValueAtTime(0.0001, t + at);
+          g.gain.exponentialRampToValueAtTime(peak, t + at + 0.012);
+          g.gain.exponentialRampToValueAtTime(0.0001, t + at + len);
+          o.connect(g).connect(ctx.destination);
+          o.start(t + at);
+          o.stop(t + at + len + 0.03);
+          this.nodes.push(o);
+        }
+      });
+      this.played++;
+    } catch { /* audio unavailable: NEXT must never be blocked */ }
+  }
+}

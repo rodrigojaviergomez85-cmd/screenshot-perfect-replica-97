@@ -3,10 +3,10 @@ import { nextMemory, pickNormal, type NormalMemory } from "@/lib/fair-pick";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Music, ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserMinus, UserX, Users, X } from "lucide-react";
+import { Music, Volume2, VolumeX, ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserMinus, UserX, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Soundboard } from "@/components/Soundboard";
-import { SoundEngine, type EffectId } from "@/lib/sound-effects";
+import { NextDing, SoundEngine, type EffectId } from "@/lib/sound-effects";
 import { DEFAULT_SOUND_PREFS, loadSoundPrefs, saveSoundPrefs, type SoundPrefs } from "@/lib/music-links";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -407,6 +407,8 @@ function FairTurns() {
   const soundsSource = useRef<{ view: Exclude<FloatView, "sounds">; size: { width: number; height: number } | null }>({ view: "controls", size: null });
   const soundEngine = useRef<SoundEngine | null>(null);
   if (!soundEngine.current) soundEngine.current = new SoundEngine();
+  const nextDing = useRef<NextDing | null>(null);
+  if (!nextDing.current) nextDing.current = new NextDing();
   const [playingEffect, setPlayingEffect] = useState<EffectId | null>(null);
   // Prefs and their load status change together, so defaults are never written before a real read.
   const [soundState, setSoundState] = useState<{ prefs: SoundPrefs; status: "loading" | "ready" | "unreadable"; savedRaw: string | null }>(
@@ -426,6 +428,7 @@ function FairTurns() {
   }, []);
   useEffect(() => {
     soundEngine.current!.setVolume(soundPrefs.volume);
+    nextDing.current!.setEnabled(soundPrefs.nextDing);
     if (soundState.status !== "ready") return;
     const raw = JSON.stringify(soundPrefs);
     if (raw === soundState.savedRaw) return; // nothing changed since the read
@@ -916,6 +919,7 @@ function FairTurns() {
     lastNextAt.current = now;
     clearSkipUndo();
     afCommit(list, ids[Math.floor(Math.random() * ids.length)]!, phase, reset);
+    void nextDing.current!.play();
   };
 
 
@@ -1025,6 +1029,7 @@ function FairTurns() {
       setRound((r) => r + 1);
     }
     commitPick(picked, startsNewRound);
+    void nextDing.current!.play(); // once per accepted NEXT, from the handler (never an updater/effect)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   };
 
@@ -1778,6 +1783,23 @@ function FairTurns() {
   );
 
   const miniNoTimer = noTimer || (!afMode && !useTimer);
+  const dingOn = soundPrefs.nextDing;
+  const toggleDing = () => setSoundPrefs((p) => ({ ...p, nextDing: !p.nextDing }));
+  const dingLabel = dingOn ? "Sonido de NEXT: activado" : "Sonido de NEXT: desactivado";
+  const dingButton = (size: "sm" | "md" | "lg") => (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className={`${size === "sm" ? "h-6 w-6" : size === "md" ? "h-8 w-8" : "h-10 w-10"} shrink-0 rounded-md ${dingOn ? "text-primary" : "text-muted-foreground"}`}
+      onClick={toggleDing}
+      aria-pressed={dingOn}
+      aria-label="Sonido de NEXT"
+      title={dingLabel}
+    >
+      {dingOn ? <Volume2 className={size === "lg" ? "h-5 w-5" : "h-3.5 w-3.5"} /> : <VolumeX className={size === "lg" ? "h-5 w-5" : "h-3.5 w-3.5"} />}
+    </Button>
+  );
   const soundsButtonSmall = (
     <Button
       variant="ghost"
@@ -1792,7 +1814,7 @@ function FairTurns() {
   );
   const ultraCompactView = (
     <div className="flex h-full min-h-0 w-full items-center overflow-hidden bg-background px-1.5 py-1 text-foreground">
-      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto_auto_auto] items-center gap-1">
+      <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto_auto_auto_auto] items-center gap-0.5">
         <p
           className="min-w-0 truncate font-[family-name:var(--font-display)] text-lg font-extrabold leading-none text-primary"
           title={current?.name ?? "No student selected"}
@@ -1827,6 +1849,7 @@ function FairTurns() {
         >
           ✗
         </Button>
+        {dingButton("sm")}
         {soundsButtonSmall}
         <Button
           variant="ghost"
@@ -1911,6 +1934,7 @@ function FairTurns() {
         <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Skip this turn" aria-label="Skip this turn">
           ✗
         </Button>
+        {dingButton("md")}
         {(useTimer || afMode) && (
           <>
             <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
@@ -1940,6 +1964,8 @@ function FairTurns() {
       backLabel={soundsSource.current.view === "mini" ? "Volver a Mini" : "Volver a controles"}
       onBack={closeSounds}
       storageWarning={soundStorageWarning}
+      nextDing={dingOn}
+      onNextDing={toggleDing}
       footer={
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2">
           <p className="min-w-0 truncate font-[family-name:var(--font-display)] text-xl font-extrabold text-primary" title={current?.name ?? "No student selected"}>
@@ -2105,6 +2131,9 @@ function FairTurns() {
               ✗
             </Button>
           </div>
+          <Button type="button" variant="outline" size="sm" className="rounded-xl text-xs font-bold" onClick={toggleDing} aria-pressed={dingOn} aria-label="Sonido de NEXT" title={dingLabel}>
+            {dingOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />} Sonido de NEXT: {dingOn ? "on" : "off"}
+          </Button>
           <p className="text-xs uppercase tracking-widest text-muted-foreground">
             Space = next (confirms turn) · X = skip turn · P = pause · T = time
           </p>
