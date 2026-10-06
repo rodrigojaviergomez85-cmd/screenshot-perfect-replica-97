@@ -2131,6 +2131,9 @@ function FairTurns() {
               ✗
             </Button>
           </div>
+          <Button type="button" variant="outline" size="sm" className="rounded-xl text-xs font-bold" onClick={toggleDing} aria-pressed={dingOn} aria-label="Sonido de NEXT" title={dingLabel}>
+            {dingOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />} Sonido de NEXT: {dingOn ? "on" : "off"}
+          </Button>
           <p className="text-xs uppercase tracking-widest text-muted-foreground">
             Space = next (confirms turn) · X = skip turn · P = pause · T = time
           </p>
