@@ -1461,10 +1461,10 @@ function FairTurns() {
                           value={option.id}
                           checked={accentColor === option.id}
                           onChange={() => setAccentColor(option.id)}
-                          className="sr-only"
+                          className="peer sr-only"
                         />
-                        <span className={`pointer-events-none flex size-9 items-center justify-center rounded-full border-2 ${option.swatch} ${accentColor === option.id ? "border-foreground" : "border-transparent"}`}>
-                          {accentColor === option.id && <Check className="h-4 w-4 text-primary-foreground" />}
+                        <span className={`pointer-events-none flex size-9 items-center justify-center rounded-full border-2 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background ${option.swatch} ${accentColor === option.id ? "border-foreground" : "border-transparent"}`}>
+                          {accentColor === option.id && <Check className="h-4 w-4 rounded-full bg-swatch-check p-0.5 text-swatch-check-foreground" />}
                         </span>
                         {option.label}
                       </label>
@@ -2039,7 +2039,7 @@ function FairTurns() {
           {pipSupported ? (
             !pipWin && (
               <Button
-                className="h-20 min-w-[16rem] rounded-2xl px-6 text-left shadow-lg shadow-primary/30"
+                className="h-20 min-w-[16rem] rounded-2xl px-6 text-left shadow-lg shadow-primary/30 dark:shadow-none"
                 onClick={() => void openFloat()}
               >
                 <PictureInPicture2 className="mr-4 h-8 w-8 shrink-0" aria-hidden />

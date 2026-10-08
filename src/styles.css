@@ -7,7 +7,7 @@
 /*
  * Fair Turns design system.
  * Fair Turns uses one selected hue to derive its strong accent and soft surfaces.
- * Cards remain white and body copy remains neutral for consistent readability.
+ * Surfaces adapt to the theme; body copy remains neutral for readability.
  */
 
 @theme inline {
@@ -25,6 +25,8 @@
   --color-surface-elevated: var(--surface-elevated);
   --color-text-primary: var(--text-primary);
   --color-text-muted: var(--text-muted);
+  --color-swatch-check: var(--swatch-check);
+  --color-swatch-check-foreground: var(--swatch-check-foreground);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -66,6 +68,8 @@
 }
 
 :root {
+  --swatch-check: hsl(170 20% 9%);
+  --swatch-check-foreground: hsl(150 10% 94%);
   --radius: 1rem;
   --accent: hsl(150.8 82.6% 33.7%);
   --accent-soft: hsl(150.8 50% 96%);
@@ -90,8 +94,8 @@
   --muted-foreground: var(--text-muted);
   --destructive: hsl(0 72% 40%);
   --destructive-foreground: oklch(0.99 0.01 25);
-  --warning: oklch(0.78 0.15 75);
-  --warning-foreground: oklch(0.28 0.07 75);
+  --warning: hsl(38 85% 30%);
+  --warning-foreground: hsl(42 40% 96%);
   --success: var(--primary);
   --success-foreground: hsl(0 0% 100%);
   --border: var(--accent-tint);
