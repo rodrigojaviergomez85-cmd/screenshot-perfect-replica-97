@@ -996,7 +996,7 @@ function FairTurns() {
     <button type="button" onClick={(e) => { e.stopPropagation(); toggleAbsent(s.id); }}
       title={isAbsent(s) ? "Absent today — mark present" : "Mark absent today"}
       aria-label={isAbsent(s) ? `Mark ${s.name} present` : `Mark ${s.name} absent`}
-      className={`shrink-0 rounded p-0.5 hover:bg-muted ${isAbsent(s) ? "text-destructive" : "opacity-60"}`}>
+      className={`shrink-0 rounded p-0.5 hover:bg-muted ${s.id === currentId ? "text-inherit" : isAbsent(s) ? "text-destructive" : "text-muted-foreground"}`}>
       {isAbsent(s) ? <UserCheck className={small ? "h-3.5 w-3.5" : "h-4 w-4"} /> : <UserX className={small ? "h-3.5 w-3.5" : "h-4 w-4"} />}
     </button>
   );
@@ -1011,7 +1011,7 @@ function FairTurns() {
         title={armed ? `Tap again to remove ${s.name}` : `Remove ${s.name} from this class`}
         aria-label={armed ? `Confirm remove ${s.name}` : `Remove ${s.name} from this class`}
         aria-pressed={armed}
-        className={`shrink-0 rounded p-0.5 hover:bg-muted ${armed ? "bg-destructive text-destructive-foreground ring-2 ring-destructive/60" : "text-destructive opacity-70"}`}>
+        className={`shrink-0 rounded p-0.5 hover:bg-muted ${armed ? "bg-destructive text-destructive-foreground ring-2 ring-destructive/60" : s.id === currentId ? "text-inherit" : "text-destructive"}`}>
         <UserMinus className={size} />
       </button>
     );
@@ -1739,11 +1739,11 @@ function FairTurns() {
         {students.map((s) => (
           <li key={s.id} className="flex items-center gap-2 rounded-lg bg-secondary px-2 py-1 text-sm font-semibold text-secondary-foreground">
             <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}
-              className={`truncate text-left ${isAbsent(s) ? "line-through opacity-50" : ""}`}>{s.name}</button>
+              className={`truncate text-left ${isAbsent(s) ? "line-through" : ""}`}>{s.name}</button>
             {absenceButton(s, true)}
             {removeButton(s, true)}
             {s.afWeek === week && <span className="text-[10px] font-bold text-primary">AF ✓</span>}
-            <Tally count={s.total} className="flex-1 text-foreground/70" />
+            <Tally count={s.total} className="flex-1 text-foreground" />
             {s.skippedThisRound ? (
               <span className="text-xs font-bold text-muted-foreground" aria-label="Skipped this turn">✗</span>
             ) : participatedThisRound(s) && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
@@ -1769,7 +1769,7 @@ function FairTurns() {
           const absent = isAbsent(s);
           const isCur = s.id === currentId;
           return (
-            <li key={s.id} className={`grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card"} ${absent ? "opacity-50" : ""}`}>
+            <li key={s.id} className={`grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card"} ${absent && !isCur ? "text-muted-foreground" : ""}`}>
               <span className="flex min-w-0 items-center gap-1">
                 <button type="button" onClick={() => manualPick(s.id)} className={`truncate text-left font-bold ${absent ? "line-through" : ""}`} title={`Pick ${s.name}`}>{s.name}</button>
                 {absenceButton(s, true)}
@@ -2045,7 +2045,7 @@ function FairTurns() {
                 <PictureInPicture2 className="mr-4 h-8 w-8 shrink-0" aria-hidden />
                 <span className="flex min-w-0 flex-col items-start text-left leading-tight">
                   <span className="text-lg font-bold whitespace-nowrap">Open floating window</span>
-                  <span className="text-sm font-medium whitespace-nowrap opacity-90">Keep controls above Zoom</span>
+                  <span className="text-sm font-medium whitespace-nowrap">Keep controls above Zoom</span>
                 </span>
               </Button>
             )
@@ -2202,7 +2202,7 @@ function FairTurns() {
                 const cls = isCurrent
                   ? "bg-primary text-primary-foreground"
                   : isAbsent(s)
-                    ? "bg-muted text-muted-foreground line-through opacity-50"
+                    ? "bg-muted text-muted-foreground line-through"
                   : s.doneThisRound
                     ? "bg-muted text-muted-foreground"
                     : "bg-secondary text-secondary-foreground";
@@ -2215,7 +2215,7 @@ function FairTurns() {
                     <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}>{s.name}</button>
                     {absenceButton(s)}
                     {s.afWeek === week && <span className="text-xs font-bold">AF ✓</span>}
-                    <Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-foreground/70"} />
+                    <Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-foreground"} />
                   </li>
                 );
               })}
