@@ -9,6 +9,9 @@ import { Soundboard } from "@/components/Soundboard";
 import { NextDing, SoundEngine, type EffectId } from "@/lib/sound-effects";
 import { DEFAULT_SOUND_PREFS, loadSoundPrefs, saveSoundPrefs, type SoundPrefs } from "@/lib/music-links";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { useTheme } from "@/hooks/use-theme";
+import { applyThemeDocument } from "@/lib/theme";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/")({
@@ -347,6 +350,8 @@ function TimerLengthControls({
 }
 
 function FairTurns() {
+  const theme = useTheme();
+  const themeToggle = <ThemeToggle {...theme} />;
   const [screen, setScreen] = useState<Screen>("home");
   const [rosterText, setRosterText] = useState("");
   const [useTimer, setUseTimer] = useState(true);
@@ -607,8 +612,10 @@ function FairTurns() {
   }, []);
 
   useEffect(() => {
-    if (pipWin) pipWin.document.documentElement.dataset["accent"] = accentColor;
-  }, [accentColor, pipWin]);
+    if (!pipWin) return;
+    pipWin.document.documentElement.dataset["accent"] = accentColor;
+    applyThemeDocument(pipWin.document, theme.theme);
+  }, [accentColor, pipWin, theme.theme]);
 
   // ---- timer ----
   useEffect(() => {
@@ -989,7 +996,7 @@ function FairTurns() {
     <button type="button" onClick={(e) => { e.stopPropagation(); toggleAbsent(s.id); }}
       title={isAbsent(s) ? "Absent today — mark present" : "Mark absent today"}
       aria-label={isAbsent(s) ? `Mark ${s.name} present` : `Mark ${s.name} absent`}
-      className={`shrink-0 rounded p-0.5 hover:bg-muted ${isAbsent(s) ? "text-destructive" : "opacity-60"}`}>
+      className={`shrink-0 rounded p-0.5 hover:bg-muted ${s.id === currentId ? "text-inherit" : isAbsent(s) ? "text-destructive" : "text-muted-foreground"}`}>
       {isAbsent(s) ? <UserCheck className={small ? "h-3.5 w-3.5" : "h-4 w-4"} /> : <UserX className={small ? "h-3.5 w-3.5" : "h-4 w-4"} />}
     </button>
   );
@@ -1004,7 +1011,7 @@ function FairTurns() {
         title={armed ? `Tap again to remove ${s.name}` : `Remove ${s.name} from this class`}
         aria-label={armed ? `Confirm remove ${s.name}` : `Remove ${s.name} from this class`}
         aria-pressed={armed}
-        className={`shrink-0 rounded p-0.5 hover:bg-muted ${armed ? "bg-destructive text-destructive-foreground ring-2 ring-destructive/60" : "text-destructive opacity-70"}`}>
+        className={`shrink-0 rounded p-0.5 hover:bg-muted ${armed ? "bg-destructive text-destructive-foreground ring-2 ring-destructive/60" : s.id === currentId ? "text-inherit" : "text-destructive"}`}>
         <UserMinus className={size} />
       </button>
     );
@@ -1164,6 +1171,7 @@ function FairTurns() {
       });
       w.document.documentElement.className = document.documentElement.className;
       w.document.documentElement.dataset["accent"] = accentColor;
+      applyThemeDocument(w.document, theme.theme);
       w.document.body.style.margin = "0";
       w.document.body.style.height = "100vh";
       w.document.body.style.display = "flex";
@@ -1298,9 +1306,12 @@ function FairTurns() {
             </div>
             <p className="text-lg text-muted-foreground">My classes</p>
           </div>
+          <div className="flex items-center gap-3">
+          {themeToggle}
           <Button size="lg" className="h-12 rounded-2xl px-6 text-base font-bold" onClick={newClass}>
             <Plus className="mr-1 h-5 w-5" /> New class
           </Button>
+          </div>
         </header>
         {sortedClasses.length === 0 ? (
           <section className="soft-card space-y-4 p-8 text-center">
@@ -1356,6 +1367,7 @@ function FairTurns() {
               Fair Turns
             </h1>
             <span className="size-3 rounded-full bg-primary" aria-label={`${accentColor} interface color`} />
+            <div className="ml-auto">{themeToggle}</div>
           </div>
           <p className="text-lg text-muted-foreground">
             Nobody participates twice until everyone has participated once.
@@ -1449,10 +1461,10 @@ function FairTurns() {
                           value={option.id}
                           checked={accentColor === option.id}
                           onChange={() => setAccentColor(option.id)}
-                          className="sr-only"
+                          className="peer sr-only"
                         />
-                        <span className={`pointer-events-none flex size-9 items-center justify-center rounded-full border-2 ${option.swatch} ${accentColor === option.id ? "border-foreground" : "border-transparent"}`}>
-                          {accentColor === option.id && <Check className="h-4 w-4 text-primary-foreground" />}
+                        <span className={`pointer-events-none flex size-9 items-center justify-center rounded-full border-2 peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background ${option.swatch} ${accentColor === option.id ? "border-foreground" : "border-transparent"}`}>
+                          {accentColor === option.id && <Check className="h-4 w-4 rounded-full bg-swatch-check p-0.5 text-swatch-check-foreground" />}
                         </span>
                         {option.label}
                       </label>
@@ -1579,9 +1591,12 @@ function FairTurns() {
 
     return (
       <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-8 px-5 py-12">
+        <header className="flex items-center justify-between gap-3">
         <h1 className="font-[family-name:var(--font-display)] text-4xl font-extrabold tracking-tight">
           Class summary
         </h1>
+        {themeToggle}
+        </header>
         <section className="animate-banner-in rounded-2xl bg-primary px-6 py-5 text-center text-primary-foreground">
           <p className="font-[family-name:var(--font-display)] text-3xl font-extrabold sm:text-4xl">
             Great class, coach!
@@ -1724,11 +1739,11 @@ function FairTurns() {
         {students.map((s) => (
           <li key={s.id} className="flex items-center gap-2 rounded-lg bg-secondary px-2 py-1 text-sm font-semibold text-secondary-foreground">
             <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}
-              className={`truncate text-left ${isAbsent(s) ? "line-through opacity-50" : ""}`}>{s.name}</button>
+              className={`truncate text-left ${isAbsent(s) ? "line-through" : ""}`}>{s.name}</button>
             {absenceButton(s, true)}
             {removeButton(s, true)}
             {s.afWeek === week && <span className="text-[10px] font-bold text-primary">AF ✓</span>}
-            <Tally count={s.total} className="flex-1 text-foreground/70" />
+            <Tally count={s.total} className="flex-1 text-foreground" />
             {s.skippedThisRound ? (
               <span className="text-xs font-bold text-muted-foreground" aria-label="Skipped this turn">✗</span>
             ) : participatedThisRound(s) && <Check className="h-4 w-4 text-primary" aria-label="Participated" />}
@@ -1754,7 +1769,7 @@ function FairTurns() {
           const absent = isAbsent(s);
           const isCur = s.id === currentId;
           return (
-            <li key={s.id} className={`grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card"} ${absent ? "opacity-50" : ""}`}>
+            <li key={s.id} className={`grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)] items-center gap-2 rounded-lg px-2 py-1.5 text-sm ${isCur ? "bg-primary text-primary-foreground" : "bg-card"} ${absent && !isCur ? "text-muted-foreground" : ""}`}>
               <span className="flex min-w-0 items-center gap-1">
                 <button type="button" onClick={() => manualPick(s.id)} className={`truncate text-left font-bold ${absent ? "line-through" : ""}`} title={`Pick ${s.name}`}>{s.name}</button>
                 {absenceButton(s, true)}
@@ -1994,6 +2009,7 @@ function FairTurns() {
     return (
       <main className="flex h-dvh flex-col overflow-hidden">
         <div className="flex justify-end p-2">
+          {themeToggle}
           <Button variant="ghost" size="sm" onClick={() => setCompact(false)}>
             <Maximize2 className="mr-1 h-4 w-4" /> Full view
           </Button>
@@ -2019,16 +2035,17 @@ function FairTurns() {
           </span>
         </div>
         <div className="col-span-full flex flex-wrap items-center justify-end gap-2 sm:col-span-1">
+          {themeToggle}
           {pipSupported ? (
             !pipWin && (
               <Button
-                className="h-20 min-w-[16rem] rounded-2xl px-6 text-left shadow-lg shadow-primary/30"
+                className="h-20 min-w-[16rem] rounded-2xl px-6 text-left shadow-lg shadow-primary/30 dark:shadow-none"
                 onClick={() => void openFloat()}
               >
                 <PictureInPicture2 className="mr-4 h-8 w-8 shrink-0" aria-hidden />
                 <span className="flex min-w-0 flex-col items-start text-left leading-tight">
                   <span className="text-lg font-bold whitespace-nowrap">Open floating window</span>
-                  <span className="text-sm font-medium whitespace-nowrap opacity-90">Keep controls above Zoom</span>
+                  <span className="text-sm font-medium whitespace-nowrap">Keep controls above Zoom</span>
                 </span>
               </Button>
             )
@@ -2185,7 +2202,7 @@ function FairTurns() {
                 const cls = isCurrent
                   ? "bg-primary text-primary-foreground"
                   : isAbsent(s)
-                    ? "bg-muted text-muted-foreground line-through opacity-50"
+                    ? "bg-muted text-muted-foreground line-through"
                   : s.doneThisRound
                     ? "bg-muted text-muted-foreground"
                     : "bg-secondary text-secondary-foreground";
@@ -2198,7 +2215,7 @@ function FairTurns() {
                     <button onClick={() => manualPick(s.id)} title={`Pick ${s.name}`}>{s.name}</button>
                     {absenceButton(s)}
                     {s.afWeek === week && <span className="text-xs font-bold">AF ✓</span>}
-                    <Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-foreground/70"} />
+                    <Tally count={s.total} className={isCurrent ? "text-primary-foreground" : "text-foreground"} />
                   </li>
                 );
               })}
