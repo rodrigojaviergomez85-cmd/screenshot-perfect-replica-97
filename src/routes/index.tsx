@@ -9,6 +9,9 @@ import { Soundboard } from "@/components/Soundboard";
 import { NextDing, SoundEngine, type EffectId } from "@/lib/sound-effects";
 import { DEFAULT_SOUND_PREFS, loadSoundPrefs, saveSoundPrefs, type SoundPrefs } from "@/lib/music-links";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { useTheme } from "@/hooks/use-theme";
+import { applyThemeDocument } from "@/lib/theme";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/")({
@@ -347,6 +350,8 @@ function TimerLengthControls({
 }
 
 function FairTurns() {
+  const theme = useTheme();
+  const themeToggle = <ThemeToggle {...theme} />;
   const [screen, setScreen] = useState<Screen>("home");
   const [rosterText, setRosterText] = useState("");
   const [useTimer, setUseTimer] = useState(true);
@@ -607,8 +612,10 @@ function FairTurns() {
   }, []);
 
   useEffect(() => {
-    if (pipWin) pipWin.document.documentElement.dataset["accent"] = accentColor;
-  }, [accentColor, pipWin]);
+    if (!pipWin) return;
+    pipWin.document.documentElement.dataset["accent"] = accentColor;
+    applyThemeDocument(pipWin.document, theme.theme);
+  }, [accentColor, pipWin, theme.theme]);
 
   // ---- timer ----
   useEffect(() => {
@@ -1164,6 +1171,7 @@ function FairTurns() {
       });
       w.document.documentElement.className = document.documentElement.className;
       w.document.documentElement.dataset["accent"] = accentColor;
+      applyThemeDocument(w.document, theme.theme);
       w.document.body.style.margin = "0";
       w.document.body.style.height = "100vh";
       w.document.body.style.display = "flex";
@@ -1298,9 +1306,12 @@ function FairTurns() {
             </div>
             <p className="text-lg text-muted-foreground">My classes</p>
           </div>
+          <div className="flex items-center gap-3">
+          {themeToggle}
           <Button size="lg" className="h-12 rounded-2xl px-6 text-base font-bold" onClick={newClass}>
             <Plus className="mr-1 h-5 w-5" /> New class
           </Button>
+          </div>
         </header>
         {sortedClasses.length === 0 ? (
           <section className="soft-card space-y-4 p-8 text-center">
@@ -1356,6 +1367,7 @@ function FairTurns() {
               Fair Turns
             </h1>
             <span className="size-3 rounded-full bg-primary" aria-label={`${accentColor} interface color`} />
+            <div className="ml-auto">{themeToggle}</div>
           </div>
           <p className="text-lg text-muted-foreground">
             Nobody participates twice until everyone has participated once.
@@ -1579,9 +1591,12 @@ function FairTurns() {
 
     return (
       <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-8 px-5 py-12">
+        <header className="flex items-center justify-between gap-3">
         <h1 className="font-[family-name:var(--font-display)] text-4xl font-extrabold tracking-tight">
           Class summary
         </h1>
+        {themeToggle}
+        </header>
         <section className="animate-banner-in rounded-2xl bg-primary px-6 py-5 text-center text-primary-foreground">
           <p className="font-[family-name:var(--font-display)] text-3xl font-extrabold sm:text-4xl">
             Great class, coach!
@@ -1994,6 +2009,7 @@ function FairTurns() {
     return (
       <main className="flex h-dvh flex-col overflow-hidden">
         <div className="flex justify-end p-2">
+          {themeToggle}
           <Button variant="ghost" size="sm" onClick={() => setCompact(false)}>
             <Maximize2 className="mr-1 h-4 w-4" /> Full view
           </Button>
@@ -2019,6 +2035,7 @@ function FairTurns() {
           </span>
         </div>
         <div className="col-span-full flex flex-wrap items-center justify-end gap-2 sm:col-span-1">
+          {themeToggle}
           {pipSupported ? (
             !pipWin && (
               <Button
