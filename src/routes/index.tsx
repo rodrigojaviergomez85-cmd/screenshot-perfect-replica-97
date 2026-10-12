@@ -523,6 +523,7 @@ function FairTurns() {
   /** True once this tab, as owner, has read the latest saved classes; only then may it write them. */
   const [classesLoaded, setClassesLoaded] = useState(false);
   const wasBlocked = useRef(false);
+  const [classesReadError, setClassesReadError] = useState(false);
   const [resumeReady, setResumeReady] = useState(false);
   useEffect(() => {
     const handle = acquireClassesLock((st) => {
@@ -540,7 +541,6 @@ function FairTurns() {
     else setClassesReadError(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lockStatus, classesLoaded, resumeReady, classesReadError]);
-  const [classesReadError, setClassesReadError] = useState(false);
 
   const loadClassesFromStorage = (): boolean => {
     try {
@@ -965,7 +965,7 @@ function FairTurns() {
 
   const [extraOffer, setExtraOffer] = useState<{ id: string; name: string } | null>(null);
   // A stale offer never survives a change of class, mode or screen.
-  useEffect(() => { setExtraOffer(null); }, [loadedClassId, afMode, screen]);
+  useEffect(() => { setExtraOffer(null); }, [loadedClassId, afMode, screen, miniView]);
   const switchMode = (af: boolean) => {
     if (af === afMode) return;
     clearSkipUndo();
