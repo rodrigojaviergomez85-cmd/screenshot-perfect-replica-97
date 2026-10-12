@@ -1,11 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { acquireClassesLock, type LockStatus } from "./tab-lock";
 
 describe("classes ownership", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("without Web Locks reports unsupported (never owner)", () => {
+    vi.stubGlobal("navigator", {});
     const seen: LockStatus[] = [];
-    acquireClassesLock((s) => seen.push(s), undefined);
-    expect(seen).toEqual(["unsupported"]);
+    const handle = acquireClassesLock((s) => seen.push(s), undefined);
+    try {
+      expect(seen).toEqual(["unsupported"]);
+    } finally {
+      handle.release();
+      vi.unstubAllGlobals();
+    }
   });
   it("a failing lock request reports unsupported, not owner", async () => {
     const seen: LockStatus[] = [];
