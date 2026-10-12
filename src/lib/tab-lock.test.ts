@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { leaseFree, LEASE_TTL_MS, parseLease } from "./tab-lock";
+import { acquireClassesLock, type LockStatus } from "./tab-lock";
 
-describe("classes lease fallback", () => {
-  it("another tab's fresh lease blocks; a stale one (closed/crashed tab) frees", () => {
-    const now = 100_000;
-    expect(leaseFree({ owner: "a", ts: now - 1000 }, "b", now)).toBe(false);
-    expect(leaseFree({ owner: "a", ts: now - LEASE_TTL_MS - 1 }, "b", now)).toBe(true);
-    expect(leaseFree({ owner: "b", ts: now }, "b", now)).toBe(true);
-    expect(leaseFree(parseLease("garbage"), "b", now)).toBe(true);
+describe("classes ownership", () => {
+  it("without Web Locks reports unsupported (never owner)", () => {
+    const seen: LockStatus[] = [];
+    acquireClassesLock((s) => seen.push(s), undefined);
+    expect(seen).toEqual(["unsupported"]);
+  });
+  it("a failing lock request reports unsupported, not owner", async () => {
+    const seen: LockStatus[] = [];
+    const locks = { request: () => Promise.reject(new Error("SecurityError")) } as unknown as LockManager;
+    acquireClassesLock((s) => seen.push(s), locks);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(seen).toEqual(["unsupported"]);
   });
 });
