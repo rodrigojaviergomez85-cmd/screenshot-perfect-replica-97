@@ -19,3 +19,14 @@ export function parseClassesPayload<C>(raw: string | null, normalize: (c: unknow
   if (classes.some((c) => c === null)) return { kind: "invalid" };
   return { kind: "ok", classes: classes as C[], lastId: typeof d.lastId === "string" ? d.lastId : null };
 }
+
+/** A stored roster must be an array whose every entry is a well-formed student (empty is fine). */
+export function isValidRoster(raw: unknown): raw is unknown[] {
+  return Array.isArray(raw) && raw.every((s) => {
+    if (!s || typeof s !== "object" || Array.isArray(s)) return false;
+    const st = s as Record<string, unknown>;
+    if (typeof st["id"] !== "string" || typeof st["name"] !== "string") return false;
+    for (const k of ["total", "roundsCompleted"]) if (st[k] !== undefined && !Number.isFinite(Number(st[k]))) return false;
+    return true;
+  });
+}

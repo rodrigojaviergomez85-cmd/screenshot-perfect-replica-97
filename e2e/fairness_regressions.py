@@ -36,23 +36,33 @@ async def main():
         await pg.reload(); await pg.wait_for_timeout(1200); await open_class(pg)
         await pg.locator('button[title="Pick Ana"]').first.click(); await pg.wait_for_timeout(400)
         await pg.locator('button[title="Pick Beto"]').first.click(); await pg.wait_for_timeout(400)
-        await pg.locator('button[title="Pick Ana"]').first.focus()
         await pg.locator('button[title="Pick Ana"]').first.click(); await pg.wait_for_timeout(400)
         check("offer opens", await pg.get_by_role("alertdialog").count() > 0)
+        focused = await pg.evaluate("document.activeElement && document.activeElement.textContent")
+        check("initial focus is Cancel, not accept", focused == "Cancel", str(focused))
         before = await stored(pg)
-        await pg.locator('button[title="Pick Ana"]').first.focus()
-        for key in ["Space", "x", "p", "t"]:
+        # No programmatic focus change: keys go wherever the dialog put focus.
+        for key in ["Space", "x", "p", "t", "Space"]:
             await pg.keyboard.press(key); await pg.wait_for_timeout(350)
         after = await stored(pg)
         check("shortcuts during offer change nothing", totals(after) == totals(before) and after["classes"][0].get("pending") == before["classes"][0].get("pending"), str(totals(after)))
+        check("offer still open after Space", await pg.get_by_role("alertdialog").count() > 0)
         await pg.keyboard.press("Escape"); await pg.wait_for_timeout(300)
         check("Escape cancels offer", await pg.get_by_role("alertdialog").count() == 0)
         check("cancel leaves data unchanged", totals(await stored(pg)) == totals(before))
         await pg.locator('button[title="Pick Ana"]').first.click(); await pg.wait_for_timeout(400)
-        await pg.get_by_role("button", name="Dar turno extra").first.click(); await pg.wait_for_timeout(400)
+        await pg.keyboard.press("Shift+Tab"); await pg.keyboard.press("Enter"); await pg.wait_for_timeout(400)
         s = await stored(pg); c = s["classes"][0]
-        check("extra turn credits outgoing Beto once, Ana pending w/o extra round",
+        check("explicit accept (Shift+Tab, Enter) credits Beto once, Ana pending w/o extra round",
               totals(s) == {"Ana": 1, "Beto": 1, "Carla": 0} and c["pending"]["normal"]["id"] == "Ana" and not c["pending"]["normal"]["earnsRound"], str(totals(s)))
+        # Held Space after acceptance: exactly one change.
+        await pg.wait_for_timeout(400)
+        await pg.keyboard.down("Space")
+        for _ in range(4):
+            await pg.evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{code:'Space',key:' ',repeat:true,bubbles:true}))"); await pg.wait_for_timeout(350)
+        await pg.keyboard.up("Space"); await pg.wait_for_timeout(300)
+        s2 = totals(await stored(pg))
+        check("held Space after accept = one NEXT", s2 == {"Ana": 2, "Beto": 1, "Carla": 0}, str(s2))
         await ctx.close()
 
         # 2) Failed read of the classes blob never overwrites it
@@ -93,6 +103,22 @@ async def main():
         await bb.keyboard.press("Space"); await bb.wait_for_timeout(500)
         t2 = totals(await stored(bb))
         check("continues from last pending", t2[pend_before] == t1[pend_before] + 1, str(t2))
+        await ctx.close()
+
+        # 4) Malformed roster is rejected; legacy key removed only after merged write
+        ctx = await b.new_context(viewport={"width": 1280, "height": 1800}); pg = await ctx.new_page()
+        await pg.goto(U)
+        bad = json.dumps({"lastId": "audit", "classes": [{"id": "audit", "name": "Fairness edge", "students": "not-an-array"}]})
+        await pg.evaluate(f"localStorage.setItem('{KEY}', {json.dumps(bad)})"); await pg.reload(); await pg.wait_for_timeout(1200)
+        check("malformed roster blob untouched", await pg.evaluate(f"localStorage.getItem('{KEY}')") == bad)
+        bad2 = json.dumps({"classes": [{"id": "a", "name": "A", "students": [{"id": "s1", "name": "Ana"}, {"id": 5}]}]})
+        await pg.evaluate(f"localStorage.setItem('{KEY}', {json.dumps(bad2)})"); await pg.reload(); await pg.wait_for_timeout(1200)
+        check("invalid student entry blob untouched", await pg.evaluate(f"localStorage.getItem('{KEY}')") == bad2)
+        legacy = json.dumps({"day": DAY, "round": 1, "students": [{"id": "L1", "name": "Lia", "total": 2}]})
+        await pg.evaluate(f"localStorage.removeItem('{KEY}'); localStorage.setItem('fair-turns-class', {json.dumps(legacy)})")
+        await pg.reload(); await pg.wait_for_timeout(1500)
+        merged = await pg.evaluate(f"localStorage.getItem('{KEY}')"); leg = await pg.evaluate("localStorage.getItem('fair-turns-class')")
+        check("legacy merged then removed", merged is not None and "Lia" in merged and leg is None)
         await ctx.close(); await b.close()
     sys.exit(1 if fails else 0)
 
