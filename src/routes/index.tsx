@@ -13,7 +13,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTheme } from "@/hooks/use-theme";
 import { applyThemeDocument } from "@/lib/theme";
 import { acquireClassesLock, type LockStatus } from "@/lib/tab-lock";
-import { parseClassesPayload } from "@/lib/classes-payload";
+import { isValidRoster, parseClassesPayload } from "@/lib/classes-payload";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/")({
@@ -93,12 +93,9 @@ function normalizeAf(raw: unknown): SavedAf | undefined {
 
 /** Stored-class hydration: a roster must be an array of well-formed students; anything else is rejected, never dropped. */
 function strictStudents(raw: unknown): Student[] | null {
-  if (!Array.isArray(raw)) return null;
-  const ok = raw.every((s) => !!s && typeof s === "object" && typeof (s as Student).id === "string" && typeof (s as Student).name === "string"
-    && ((s as Student).total === undefined || Number.isFinite(Number((s as Student).total))));
-  return ok ? normalizeStudents(raw) : null;
+  return isValidRoster(raw) ? normalizeStudents(raw) : null;
 }
-export function normalizeClass(raw: unknown): SavedClass | null {
+function normalizeClass(raw: unknown): SavedClass | null {
   if (!raw || typeof raw !== "object") return null;
   const c = raw as Partial<SavedClass>;
   if (typeof c.id !== "string" || typeof c.name !== "string") return null;
