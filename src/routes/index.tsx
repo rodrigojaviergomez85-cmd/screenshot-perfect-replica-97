@@ -91,10 +91,19 @@ function normalizeAf(raw: unknown): SavedAf | undefined {
   };
 }
 
-function normalizeClass(raw: unknown): SavedClass | null {
+/** Stored-class hydration: a roster must be an array of well-formed students; anything else is rejected, never dropped. */
+function strictStudents(raw: unknown): Student[] | null {
+  if (!Array.isArray(raw)) return null;
+  const ok = raw.every((s) => !!s && typeof s === "object" && typeof (s as Student).id === "string" && typeof (s as Student).name === "string"
+    && ((s as Student).total === undefined || Number.isFinite(Number((s as Student).total))));
+  return ok ? normalizeStudents(raw) : null;
+}
+export function normalizeClass(raw: unknown): SavedClass | null {
   if (!raw || typeof raw !== "object") return null;
   const c = raw as Partial<SavedClass>;
   if (typeof c.id !== "string" || typeof c.name !== "string") return null;
+  const students = strictStudents(c.students);
+  if (!students) return null;
   const af = normalizeAf(c.af);
   const n = c.normal as Partial<SavedNormal> | undefined;
   const normal = n && typeof n === "object" && typeof n.day === "string"
@@ -103,7 +112,7 @@ function normalizeClass(raw: unknown): SavedClass | null {
   return {
     id: c.id, name: c.name.slice(0, 60), day: typeof c.day === "string" ? c.day : "",
     round: Number.isInteger(c.round) && (c.round ?? 0) > 0 ? c.round! : 1,
-    students: normalizeStudents(c.students), updatedAt: Number(c.updatedAt) || 0,
+    students, updatedAt: Number(c.updatedAt) || 0,
     ...(af ? { af } : {}),
     ...(normal ? { normal } : {}),
     ...(c.pending ? { pending: c.pending } : {}),
@@ -523,6 +532,7 @@ function FairTurns() {
   /** True once this tab, as owner, has read the latest saved classes; only then may it write them. */
   const [classesLoaded, setClassesLoaded] = useState(false);
   const wasBlocked = useRef(false);
+  const legacyMigrated = useRef(false);
   const [classesReadError, setClassesReadError] = useState(false);
   const [resumeReady, setResumeReady] = useState(false);
   useEffect(() => {
@@ -557,7 +567,7 @@ function FairTurns() {
           loaded = [...loaded, { id, name: "My class", day: data.day ?? "", round: data.round ?? 1, students: list, updatedAt: Date.now() }];
           lastId = id;
         }
-        window.localStorage.removeItem(CLASS_STORAGE_KEY);
+        legacyMigrated.current = true; // removed only after the merged classes are written successfully
       }
       setClasses(loaded);
       setActiveClassId(lastId && loaded.some((c) => c.id === lastId) ? lastId : null);
@@ -596,6 +606,7 @@ function FairTurns() {
     if (!classesLoaded || lockStatus !== "owner") return;
     try {
       window.localStorage.setItem(CLASSES_STORAGE_KEY, JSON.stringify({ lastId: activeClassId, classes }));
+      if (legacyMigrated.current) { window.localStorage.removeItem(CLASS_STORAGE_KEY); legacyMigrated.current = false; }
     } catch {
       /* Storage unavailable: classes still work for this session. */
     }
@@ -1060,8 +1071,8 @@ function FairTurns() {
   const noticeLine = extraOffer ? (
     <div role="alertdialog" aria-label="Extra turn" aria-describedby="extra-turn-desc" data-confirm className="flex flex-wrap items-center gap-2 rounded-lg bg-warning/15 px-2 py-1 text-xs font-semibold text-foreground">
       <span id="extra-turn-desc" className="min-w-0 flex-1">{extraOffer.name} already had a turn this round; others are still waiting.</span>
-      <button type="button" autoFocus onClick={() => manualPick(extraOffer.id, true)} className="rounded bg-primary px-2 py-0.5 text-primary-foreground">Dar turno extra</button>
-      <button type="button" onClick={() => setExtraOffer(null)} className="rounded border border-border px-2 py-0.5">Cancel</button>
+      <button type="button" onClick={() => manualPick(extraOffer.id, true)} className="rounded bg-primary px-2 py-0.5 text-primary-foreground">Dar turno extra</button>
+      <button type="button" autoFocus onClick={() => setExtraOffer(null)} className="rounded border border-border px-2 py-0.5">Cancel</button>
     </div>
   ) : pickNotice ? <p role="status" className="rounded-lg bg-warning/15 px-2 py-1 text-xs font-semibold text-foreground">{pickNotice}</p> : null;
 
@@ -1163,12 +1174,9 @@ function FairTurns() {
       if (extraOffer) {
         const k0 = e.key.toLowerCase();
         if (e.key === "Escape") { e.preventDefault(); setExtraOffer(null); return; }
-        if (e.code === "Space" || k0 === "x" || k0 === "p" || k0 === "t") {
-          const el0 = e.target as HTMLElement | null;
-          // Space may still activate the dialog's own focused buttons.
-          if (!(e.code === "Space" && el0?.closest?.("[data-confirm]"))) e.preventDefault();
-          e.stopPropagation();
-        }
+        // Never let a NEXT-style key accept or change anything, even on a focused dialog button:
+        // accepting an extra turn takes Enter or a click.
+        if (e.code === "Space" || k0 === "x" || k0 === "p" || k0 === "t") { e.preventDefault(); e.stopPropagation(); }
         return;
       }
       const el = e.target as HTMLElement | null;
@@ -1194,11 +1202,17 @@ function FairTurns() {
         if (!afMode) cycleTurnSeconds();
       }
     };
-    window.addEventListener("keydown", onKey);
-    pipWin?.addEventListener("keydown", onKey);
+    // Space activates a focused button on keyup, so block that too while a decision is open.
+    const onKeyUp = (e: KeyboardEvent) => { if (extraOffer && e.code === "Space") { e.preventDefault(); e.stopPropagation(); } };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    pipWin?.addEventListener("keydown", onKey, true);
+    pipWin?.addEventListener("keyup", onKeyUp, true);
     return () => {
-      window.removeEventListener("keydown", onKey);
-      pipWin?.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+      pipWin?.removeEventListener("keydown", onKey, true);
+      pipWin?.removeEventListener("keyup", onKeyUp, true);
     };
   }, [afMode, cycleTurnSeconds, handleNext, handleSkip, screen, toggleTimer, pipWin, extraOffer, lockStatus, classesLoaded]);
 
