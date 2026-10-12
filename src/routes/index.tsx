@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTheme } from "@/hooks/use-theme";
 import { applyThemeDocument } from "@/lib/theme";
+import { acquireClassesLock, type LockStatus } from "@/lib/tab-lock";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/")({
@@ -509,6 +510,39 @@ function FairTurns() {
       }
       const savedAfSeconds = Number(window.localStorage.getItem(AF_SECONDS_KEY));
       if (Number.isInteger(savedAfSeconds) && savedAfSeconds >= 10 && savedAfSeconds <= 600) setAfSeconds(savedAfSeconds);
+    } catch {
+      /* Invalid or unavailable browser storage falls back to defaults. */
+    }
+    setPreferencesLoaded(true);
+  }, []);
+
+  // ---- exclusive classes ownership (one editing tab per origin) ----
+  const [lockStatus, setLockStatus] = useState<LockStatus>("acquiring");
+  const [lockAttempt, setLockAttempt] = useState(0);
+  /** True once this tab, as owner, has read the latest saved classes; only then may it write them. */
+  const [classesLoaded, setClassesLoaded] = useState(false);
+  const wasBlocked = useRef(false);
+  const [resumeReady, setResumeReady] = useState(false);
+  useEffect(() => {
+    let storage: Storage | null = null;
+    try { storage = window.localStorage; } catch { /* blocked */ }
+    const handle = acquireClassesLock((st) => {
+      if (st === "blocked") { wasBlocked.current = true; setClassesLoaded(false); }
+      setLockStatus(st);
+    }, storage);
+    return () => handle.release();
+  }, [lockAttempt]);
+  useEffect(() => {
+    if (lockStatus !== "owner" || classesLoaded) return;
+    // Taking over from another tab is explicit: wait for the coach, then read the freshest copy.
+    if (wasBlocked.current && !resumeReady) return;
+    loadClassesFromStorage();
+    setClassesLoaded(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lockStatus, classesLoaded, resumeReady]);
+
+  const loadClassesFromStorage = () => {
+    try {
       const savedClasses = window.localStorage.getItem(CLASSES_STORAGE_KEY);
       let loaded: SavedClass[] = [];
       let lastId: string | null = null;
@@ -529,12 +563,11 @@ function FairTurns() {
         window.localStorage.removeItem(CLASS_STORAGE_KEY);
       }
       setClasses(loaded);
-      if (lastId && loaded.some((c) => c.id === lastId)) setActiveClassId(lastId);
+      setActiveClassId(lastId && loaded.some((c) => c.id === lastId) ? lastId : null);
     } catch {
       /* Invalid or unavailable browser storage falls back to defaults. */
     }
-    setPreferencesLoaded(true);
-  }, []);
+  };
 
   useEffect(() => {
     document.documentElement.dataset["accent"] = accentColor;
@@ -562,13 +595,13 @@ function FairTurns() {
   }, [loadedClassId, classDay, round, screen, setupMode, students, week, afQueue, afLast, afSkipped, normalMem, pend]);
 
   useEffect(() => {
-    if (!preferencesLoaded) return;
+    if (!classesLoaded || lockStatus !== "owner") return;
     try {
       window.localStorage.setItem(CLASSES_STORAGE_KEY, JSON.stringify({ lastId: activeClassId, classes }));
     } catch {
       /* Storage unavailable: classes still work for this session. */
     }
-  }, [activeClassId, classes, preferencesLoaded]);
+  }, [activeClassId, classes, classesLoaded, lockStatus]);
 
   // ---- day rollover (also when the tab stays open overnight) ----
   useEffect(() => {
@@ -882,17 +915,19 @@ function FairTurns() {
    */
   const afEligible = (list: Student[], curIdIn: string | null, skipped: string[] = afSkipped): { phase: "fresh" | "cycle"; ids: string[]; reset: boolean } => {
     // With no student on turn (e.g. after reload or a mode switch), avoid repeating the last AF pick.
+    // Weekly priority uses only the turn actually pending now; the historical last pick (afLast) only
+    // breaks ties inside fair cycles and never outranks a present student still missing AF this week.
     const curId = curIdIn ?? afLast;
     const present = list.filter((s) => s.absentDay !== classDay);
     // Skipped students sit out the rest of this cycle, even without an AF record this week.
-    const fresh = present.filter((s) => s.afWeek !== week && s.id !== curId && !skipped.includes(s.id));
+    const fresh = present.filter((s) => s.afWeek !== week && s.id !== curIdIn && !skipped.includes(s.id));
     if (fresh.length > 0) return { phase: "fresh", ids: fresh.map((s) => s.id), reset: false };
     let reset = false;
     let pool = present.filter((s) => !afQueue.includes(s.id));
     if (pool.length === 0) {
       // New cycle: skips expire, so anyone still without AF this week keeps priority.
       // A skipped student never had their turn, so they are not "the current one" to avoid here.
-      const freshAll = present.filter((s) => s.afWeek !== week && (s.id !== curId || skipped.includes(s.id)));
+      const freshAll = present.filter((s) => s.afWeek !== week && (s.id !== curIdIn || skipped.includes(s.id)));
       if (freshAll.length > 0) return { phase: "fresh", ids: freshAll.map((s) => s.id), reset: true };
       pool = present; reset = true;
     }
@@ -958,7 +993,8 @@ function FairTurns() {
   };
 
   /** Manual pick by clicking a name: same bookkeeping as NEXT, same eligibility rules. */
-  const manualPick = (id: string) => {
+  const [extraOffer, setExtraOffer] = useState<{ id: string; name: string } | null>(null);
+  const manualPick = (id: string, extraOk = false) => {
     if (id === currentId) return;
     const target = students.find((s) => s.id === id);
     if (!target) return;
@@ -984,6 +1020,9 @@ function FairTurns() {
     }
     const startsNewRound = presentStudents.length > 0 && presentStudents.every((s) => s.doneThisRound);
     if (!startsNewRound && target.skippedThisRound) { notify(`${target.name} skipped this turn — available next round.`); return; }
+    // Repeating someone already served while others still wait is an explicit exception.
+    if (!startsNewRound && target.doneThisRound && pending.length > 0 && !extraOk) { setExtraOffer({ id, name: target.name }); return; }
+    setExtraOffer(null);
     lastNextAt.current = now;
     clearSkipUndo();
     setPickNotice(null);
@@ -1017,7 +1056,13 @@ function FairTurns() {
     );
   };
 
-  const noticeLine = pickNotice ? <p role="status" className="rounded-lg bg-warning/15 px-2 py-1 text-xs font-semibold text-foreground">{pickNotice}</p> : null;
+  const noticeLine = extraOffer ? (
+    <div role="alertdialog" aria-label="Extra turn" data-confirm className="flex flex-wrap items-center gap-2 rounded-lg bg-warning/15 px-2 py-1 text-xs font-semibold text-foreground">
+      <span className="min-w-0 flex-1">{extraOffer.name} already had a turn this round; others are still waiting.</span>
+      <button type="button" onClick={() => manualPick(extraOffer.id, true)} className="rounded bg-primary px-2 py-0.5 text-primary-foreground">Dar turno extra</button>
+      <button type="button" onClick={() => setExtraOffer(null)} className="rounded border border-border px-2 py-0.5">Cancel</button>
+    </div>
+  ) : pickNotice ? <p role="status" className="rounded-lg bg-warning/15 px-2 py-1 text-xs font-semibold text-foreground">{pickNotice}</p> : null;
 
   const handleNext = () => {
     if (afMode) { afNext(); return; }
@@ -1111,7 +1156,12 @@ function FairTurns() {
     if (screen !== "class") return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el && /input|textarea|select/i.test(el.tagName)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (el && (/input|textarea|select/i.test(el.tagName) || el.isContentEditable)) return;
+      if (el && typeof el.closest === "function" && el.closest("[role=dialog],[role=alertdialog],[data-confirm]")) return;
+      const k = e.key.toLowerCase();
+      // Holding a key auto-repeats keydown: one physical press = one action.
+      if (e.repeat && (e.code === "Space" || k === "x" || k === "p" || k === "t")) { e.preventDefault(); return; }
       // Typing or pressing buttons inside the soundboard must never drive the class.
       if (el && typeof el.closest === "function" && el.closest("[data-soundboard]")) return;
       if (e.code === "Space") {
@@ -1292,6 +1342,31 @@ function FairTurns() {
     if (undoMessageTimer.current !== null) window.clearTimeout(undoMessageTimer.current);
     undoMessageTimer.current = null;
   };
+
+  if (lockStatus !== "owner" || !classesLoaded) {
+    const free = lockStatus === "owner";
+    return (
+      <main className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center gap-5 px-5 text-center">
+        <h1 className="font-[family-name:var(--font-display)] text-4xl font-extrabold tracking-tight">Fair Turns</h1>
+        {lockStatus === "acquiring" ? (
+          <p className="text-muted-foreground">Loading…</p>
+        ) : free ? (
+          <>
+            <p role="status" className="text-lg font-semibold">The other tab is closed. You can continue here.</p>
+            <button type="button" onClick={() => setResumeReady(true)}
+              className="rounded-xl bg-primary px-6 py-3 font-bold text-primary-foreground">Continue here</button>
+          </>
+        ) : (
+          <>
+            <p role="alert" className="text-lg font-semibold">Fair Turns está activo en otra pestaña</p>
+            <p className="text-sm text-muted-foreground">To keep tallies safe, only one tab can edit your classes. Close the other tab, then continue here.</p>
+            <button type="button" onClick={() => setLockAttempt((n) => n + 1)}
+              className="rounded-xl border border-border px-5 py-2 font-semibold">Retry</button>
+          </>
+        )}
+      </main>
+    );
+  }
 
   // ---------------- home ----------------
   if (screen === "home") {
