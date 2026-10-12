@@ -13,6 +13,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTheme } from "@/hooks/use-theme";
 import { applyThemeDocument } from "@/lib/theme";
 import { acquireClassesLock, type LockStatus } from "@/lib/tab-lock";
+import { parseClassesPayload } from "@/lib/classes-payload";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/")({
@@ -522,35 +523,31 @@ function FairTurns() {
   /** True once this tab, as owner, has read the latest saved classes; only then may it write them. */
   const [classesLoaded, setClassesLoaded] = useState(false);
   const wasBlocked = useRef(false);
+  const [classesReadError, setClassesReadError] = useState(false);
   const [resumeReady, setResumeReady] = useState(false);
   useEffect(() => {
-    let storage: Storage | null = null;
-    try { storage = window.localStorage; } catch { /* blocked */ }
     const handle = acquireClassesLock((st) => {
-      if (st === "blocked") { wasBlocked.current = true; setClassesLoaded(false); }
+      if (st !== "owner") { if (st === "blocked") wasBlocked.current = true; setClassesLoaded(false); }
       setLockStatus(st);
-    }, storage);
+    });
     return () => handle.release();
   }, [lockAttempt]);
   useEffect(() => {
-    if (lockStatus !== "owner" || classesLoaded) return;
+    if (lockStatus !== "owner" || classesLoaded || classesReadError) return;
     // Taking over from another tab is explicit: wait for the coach, then read the freshest copy.
     if (wasBlocked.current && !resumeReady) return;
-    loadClassesFromStorage();
-    setClassesLoaded(true);
+    // Saves are enabled only after a successful read (or genuinely absent data), never after a failure.
+    if (loadClassesFromStorage()) setClassesLoaded(true);
+    else setClassesReadError(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lockStatus, classesLoaded, resumeReady]);
+  }, [lockStatus, classesLoaded, resumeReady, classesReadError]);
 
-  const loadClassesFromStorage = () => {
+  const loadClassesFromStorage = (): boolean => {
     try {
-      const savedClasses = window.localStorage.getItem(CLASSES_STORAGE_KEY);
-      let loaded: SavedClass[] = [];
-      let lastId: string | null = null;
-      if (savedClasses) {
-        const data = JSON.parse(savedClasses) as { lastId?: unknown; classes?: unknown };
-        loaded = Array.isArray(data.classes) ? data.classes.map(normalizeClass).filter((c): c is SavedClass => !!c) : [];
-        lastId = typeof data.lastId === "string" ? data.lastId : null;
-      }
+      const read = parseClassesPayload(window.localStorage.getItem(CLASSES_STORAGE_KEY), normalizeClass);
+      if (read.kind === "invalid") return false;
+      let loaded: SavedClass[] = read.kind === "ok" ? read.classes : [];
+      let lastId: string | null = read.kind === "ok" ? read.lastId : null;
       const legacy = window.localStorage.getItem(CLASS_STORAGE_KEY);
       if (legacy) {
         const data = JSON.parse(legacy) as { day?: string; round?: number; students?: unknown };
@@ -564,8 +561,9 @@ function FairTurns() {
       }
       setClasses(loaded);
       setActiveClassId(lastId && loaded.some((c) => c.id === lastId) ? lastId : null);
+      return true;
     } catch {
-      /* Invalid or unavailable browser storage falls back to defaults. */
+      return false; // unreadable storage: keep saves disabled so stored progress is never replaced
     }
   };
 
@@ -965,6 +963,9 @@ function FairTurns() {
   };
 
 
+  const [extraOffer, setExtraOffer] = useState<{ id: string; name: string } | null>(null);
+  // A stale offer never survives a change of class, mode or screen.
+  useEffect(() => { setExtraOffer(null); }, [loadedClassId, afMode, screen, miniView]);
   const switchMode = (af: boolean) => {
     if (af === afMode) return;
     clearSkipUndo();
@@ -993,8 +994,8 @@ function FairTurns() {
   };
 
   /** Manual pick by clicking a name: same bookkeeping as NEXT, same eligibility rules. */
-  const [extraOffer, setExtraOffer] = useState<{ id: string; name: string } | null>(null);
   const manualPick = (id: string, extraOk = false) => {
+    if (!extraOk && extraOffer) return; // a pending extra-turn decision blocks every other turn change
     if (id === currentId) return;
     const target = students.find((s) => s.id === id);
     if (!target) return;
@@ -1057,14 +1058,15 @@ function FairTurns() {
   };
 
   const noticeLine = extraOffer ? (
-    <div role="alertdialog" aria-label="Extra turn" data-confirm className="flex flex-wrap items-center gap-2 rounded-lg bg-warning/15 px-2 py-1 text-xs font-semibold text-foreground">
-      <span className="min-w-0 flex-1">{extraOffer.name} already had a turn this round; others are still waiting.</span>
-      <button type="button" onClick={() => manualPick(extraOffer.id, true)} className="rounded bg-primary px-2 py-0.5 text-primary-foreground">Dar turno extra</button>
+    <div role="alertdialog" aria-label="Extra turn" aria-describedby="extra-turn-desc" data-confirm className="flex flex-wrap items-center gap-2 rounded-lg bg-warning/15 px-2 py-1 text-xs font-semibold text-foreground">
+      <span id="extra-turn-desc" className="min-w-0 flex-1">{extraOffer.name} already had a turn this round; others are still waiting.</span>
+      <button type="button" autoFocus onClick={() => manualPick(extraOffer.id, true)} className="rounded bg-primary px-2 py-0.5 text-primary-foreground">Dar turno extra</button>
       <button type="button" onClick={() => setExtraOffer(null)} className="rounded border border-border px-2 py-0.5">Cancel</button>
     </div>
   ) : pickNotice ? <p role="status" className="rounded-lg bg-warning/15 px-2 py-1 text-xs font-semibold text-foreground">{pickNotice}</p> : null;
 
   const handleNext = () => {
+    if (extraOffer) return;
     if (afMode) { afNext(); return; }
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
@@ -1088,6 +1090,7 @@ function FairTurns() {
   /** Skip: discard the pending turn (no credit, nothing removed), keep the student out until the next round/cycle. */
   const canSkip = !!current;
   const handleSkip = () => {
+    if (extraOffer) return;
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     if (afMode) {
@@ -1155,6 +1158,19 @@ function FairTurns() {
   useEffect(() => {
     if (screen !== "class") return;
     const onKey = (e: KeyboardEvent) => {
+      if (lockStatus !== "owner" || !classesLoaded) return;
+      // While the extra-turn decision is open, no shortcut may change turns, wherever focus is.
+      if (extraOffer) {
+        const k0 = e.key.toLowerCase();
+        if (e.key === "Escape") { e.preventDefault(); setExtraOffer(null); return; }
+        if (e.code === "Space" || k0 === "x" || k0 === "p" || k0 === "t") {
+          const el0 = e.target as HTMLElement | null;
+          // Space may still activate the dialog's own focused buttons.
+          if (!(e.code === "Space" && el0?.closest?.("[data-confirm]"))) e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
       const el = e.target as HTMLElement | null;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (el && (/input|textarea|select/i.test(el.tagName) || el.isContentEditable)) return;
@@ -1184,7 +1200,7 @@ function FairTurns() {
       window.removeEventListener("keydown", onKey);
       pipWin?.removeEventListener("keydown", onKey);
     };
-  }, [afMode, cycleTurnSeconds, handleNext, handleSkip, screen, toggleTimer, pipWin]);
+  }, [afMode, cycleTurnSeconds, handleNext, handleSkip, screen, toggleTimer, pipWin, extraOffer, lockStatus, classesLoaded]);
 
   // ---- float (Document Picture-in-Picture) ----
   useEffect(() => {
@@ -1348,7 +1364,21 @@ function FairTurns() {
     return (
       <main className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center gap-5 px-5 text-center">
         <h1 className="font-[family-name:var(--font-display)] text-4xl font-extrabold tracking-tight">Fair Turns</h1>
-        {lockStatus === "acquiring" ? (
+        {classesReadError ? (
+          <>
+            <p role="alert" className="text-lg font-semibold">Your saved classes could not be read.</p>
+            <p className="text-sm text-muted-foreground">Nothing was changed or overwritten. Try again; if it keeps failing, check that browser storage is allowed.</p>
+            <button type="button" onClick={() => setClassesReadError(false)}
+              className="rounded-xl bg-primary px-6 py-3 font-bold text-primary-foreground">Try again</button>
+          </>
+        ) : lockStatus === "unsupported" ? (
+          <>
+            <p role="alert" className="text-lg font-semibold">This browser can't guarantee safe saving of your classes.</p>
+            <p className="text-sm text-muted-foreground">Fair Turns needs a current Chrome, Edge, Firefox or Safari to edit classes. Your saved data was not touched.</p>
+            <button type="button" onClick={() => setLockAttempt((n) => n + 1)}
+              className="rounded-xl border border-border px-5 py-2 font-semibold">Retry</button>
+          </>
+        ) : lockStatus === "acquiring" ? (
           <p className="text-muted-foreground">Loading…</p>
         ) : free ? (
           <>
