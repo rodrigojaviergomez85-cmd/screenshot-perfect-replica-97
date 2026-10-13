@@ -1,5 +1,5 @@
 import { confirmTurn, restorePendings, NO_PENDING, type Pendings } from "@/lib/pending-turn";
-import { nextMemory, pickNormal, type NormalMemory } from "@/lib/fair-pick";
+import { afEligibility, carryFrom, EMPTY_MEMORY, nextMemory, pickNormal, type NormalMemory } from "@/lib/fair-pick";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -62,9 +62,9 @@ const CLASS_STORAGE_KEY = "fair-turns-class"; // legacy single-class key, migrat
 const CLASSES_STORAGE_KEY = "fair-turns-classes";
 
 /** Automatic Fluency cycle saved per class; only valid within its week. */
-type SavedAf = { week: string; queue: string[]; lastId: string | null; skipped?: string[] };
+type SavedAf = { week: string; queue: string[]; lastId: string | null; skipped?: string[]; prev?: string | null; carry?: string[] };
 /** Normal-round order memory, valid only for its local day. */
-type SavedNormal = { day: string; last: string | null; avoid: string | null };
+type SavedNormal = { day: string; last: string | null; avoid: string | null; prev?: string | null; carry?: string[] };
 type SavedClass = { id: string; name: string; day: string; round: number; students: Student[]; updatedAt: number; af?: SavedAf; normal?: SavedNormal; pending?: unknown };
 
 function normalizeStudents(raw: unknown): Student[] {
@@ -88,6 +88,8 @@ function normalizeAf(raw: unknown): SavedAf | undefined {
     queue: Array.isArray(a.queue) ? a.queue.filter((x): x is string => typeof x === "string") : [],
     lastId: typeof a.lastId === "string" ? a.lastId : null,
     skipped: Array.isArray(a.skipped) ? a.skipped.filter((x): x is string => typeof x === "string") : [],
+    prev: typeof a.prev === "string" ? a.prev : null,
+    carry: Array.isArray(a.carry) ? a.carry.filter((x): x is string => typeof x === "string") : [],
   };
 }
 
@@ -104,7 +106,9 @@ function normalizeClass(raw: unknown): SavedClass | null {
   const af = normalizeAf(c.af);
   const n = c.normal as Partial<SavedNormal> | undefined;
   const normal = n && typeof n === "object" && typeof n.day === "string"
-    ? { day: n.day, last: typeof n.last === "string" ? n.last : null, avoid: typeof n.avoid === "string" ? n.avoid : null }
+    ? { day: n.day, last: typeof n.last === "string" ? n.last : null, avoid: typeof n.avoid === "string" ? n.avoid : null,
+        prev: typeof n.prev === "string" ? n.prev : null,
+        carry: Array.isArray(n.carry) ? n.carry.filter((x): x is string => typeof x === "string") : [] }
     : undefined;
   return {
     id: c.id, name: c.name.slice(0, 60), day: typeof c.day === "string" ? c.day : "",
@@ -400,10 +404,13 @@ function FairTurns() {
   const [afSkipped, setAfSkipped] = useState<string[]>([]);
   /** Last AF pick, kept per class so a reload never repeats it immediately at a cycle change. */
   const [afLast, setAfLast] = useState<string | null>(null);
+  /** AF recency (penultimate distinct pick) and previous-cycle skipped priority, per class/week. */
+  const [afPrev, setAfPrev] = useState<string | null>(null);
+  const [afCarry, setAfCarry] = useState<string[]>([]);
   /** Normal mode: whether the current turn earned the student's round (first real turn this round). */
   const [turnFirst, setTurnFirst] = useState(false);
   /** Normal mode order memory (per class, per day): last pick and the previous round's closer. */
-  const [normalMem, setNormalMem] = useState<NormalMemory>({ last: null, avoid: null });
+  const [normalMem, setNormalMem] = useState<NormalMemory>(EMPTY_MEMORY);
   const afPrevWeek = useRef(new Map<string, string | undefined>());
 
   const lastNextAt = useRef(Number.NEGATIVE_INFINITY);
@@ -595,12 +602,12 @@ function FairTurns() {
   // Keep the active class entry in sync with live progress.
   useEffect(() => {
     if (!loadedClassId || screen === "home" || (screen === "setup" && setupMode === "new")) return;
-    const af: SavedAf = { week, queue: afQueue, lastId: afLast, skipped: afSkipped };
+    const af: SavedAf = { week, queue: afQueue, lastId: afLast, skipped: afSkipped, prev: afPrev, carry: afCarry };
     const normal: SavedNormal = { day: classDay, ...normalMem };
     setClasses((prev) =>
       prev.map((c) => (c.id === loadedClassId ? { ...c, students, round, day: classDay, af, normal, pending: pend, updatedAt: Date.now() } : c)),
     );
-  }, [loadedClassId, classDay, round, screen, setupMode, students, week, afQueue, afLast, afSkipped, normalMem, pend]);
+  }, [loadedClassId, classDay, round, screen, setupMode, students, week, afQueue, afLast, afSkipped, afPrev, afCarry, normalMem, pend]);
 
   useEffect(() => {
     if (!classesLoaded || lockStatus !== "owner") return;
@@ -637,8 +644,8 @@ function FairTurns() {
       setTimerRunning(false);
       setSkipUndo(null);
       // The AF cycle lives for the whole week; a new day only clears today's turn.
-      setAfSkipped([]); setTurnFirst(false);
-      setNormalMem({ last: null, avoid: null });
+      setAfSkipped([]); setAfCarry([]); setTurnFirst(false);
+      setNormalMem(EMPTY_MEMORY);
     };
     const id = window.setInterval(check, 30000);
     document.addEventListener("visibilitychange", check);
@@ -691,10 +698,14 @@ function FairTurns() {
     setAfSkipped(af?.skipped ? af.skipped.filter((x) => ids.has(x)) : []);
     setAfQueue(af ? af.queue.filter((x) => ids.has(x)) : []);
     setAfLast(af && af.lastId && ids.has(af.lastId) ? af.lastId : null);
+    setAfPrev(af && af.prev && ids.has(af.prev) ? af.prev : null);
+    setAfCarry(af?.carry ? af.carry.filter((x) => ids.has(x)) : []);
     const nm = savedNormal && savedNormal.day === localDay() ? savedNormal : null;
     setNormalMem({
       last: nm?.last && ids.has(nm.last) ? nm.last : null,
       avoid: nm?.avoid && ids.has(nm.avoid) ? nm.avoid : null,
+      prev: nm?.prev && ids.has(nm.prev) ? nm.prev : null,
+      carry: nm?.carry ? nm.carry.filter((x) => ids.has(x)) : [],
     });
     // Resume today's pending turn (paused); old saves without one stay as they are.
     const restored = restorePendings(savedPending, ids, localDay(), thisWeek);
@@ -767,12 +778,12 @@ function FairTurns() {
   };
 
   const commitPick = useCallback(
-    (picked: Student, startsNewRound = false) => {
+    (picked: Student, startsNewRound = false, newCarry: string[] = []) => {
       // A round counts at most once per student per round; extra manual turns only add a tally.
       // Picking never credits; the round is earned on confirm, at most once per round.
       const first = startsNewRound || !picked.doneThisRound;
       setTurnFirst(first);
-      setNormalMem((m) => nextMemory(m, picked.id, startsNewRound));
+      setNormalMem((m) => nextMemory(m, picked.id, startsNewRound, newCarry));
       setPend((p) => ({ ...p, normal: { id: picked.id, day: classDay, earnsRound: first } }));
       setLastPicked(picked);
       setStudents((prev) => {
@@ -870,7 +881,9 @@ function FairTurns() {
     setAfQueue((q) => q.filter((x) => x !== id));
     setAfSkipped((q) => q.filter((x) => x !== id));
     setAfLast((v) => (v === id ? null : v));
-    setNormalMem((m) => ({ last: m.last === id ? null : m.last, avoid: m.avoid === id ? null : m.avoid }));
+    setAfPrev((v) => (v === id ? null : v));
+    setAfCarry((q) => q.filter((x) => x !== id));
+    setNormalMem((m) => ({ last: m.last === id ? null : m.last, prev: m.prev === id ? null : m.prev, avoid: m.avoid === id ? null : m.avoid, carry: m.carry.filter((x) => x !== id) }));
     notify(`${name} removed from this class.`);
   };
 
@@ -895,8 +908,8 @@ function FairTurns() {
   /** Shared pick rule for NEXT and Skip: no repeats in a round; first pick of a new round avoids the last picked. */
   const choosePick = (list: Student[], newRound: boolean): Student | null => {
     const present = list.filter((s) => s.absentDay !== classDay);
-    const lastId = normalMem.last ?? lastPicked?.id ?? null;
-    return pickNormal(present, newRound, lastId, newRound ? lastId : normalMem.avoid);
+    const mem = { ...normalMem, last: normalMem.last ?? lastPicked?.id ?? null };
+    return pickNormal(present, newRound, newRound ? { ...mem, carry: carryFrom(present) } : mem);
   };
 
   const startAfTimer = () => {
@@ -922,41 +935,20 @@ function FairTurns() {
    * current cycle; nobody repeats until the other present students had a turn, and the current student is
    * avoided when someone else is available.
    */
-  const afEligible = (list: Student[], curIdIn: string | null, skipped: string[] = afSkipped): { phase: "fresh" | "cycle"; ids: string[]; reset: boolean } => {
-    // With no student on turn (e.g. after reload or a mode switch), avoid repeating the last AF pick.
-    // Weekly priority uses only the turn actually pending now; the historical last pick (afLast) only
-    // breaks ties inside fair cycles and never outranks a present student still missing AF this week.
-    const curId = curIdIn ?? afLast;
-    const present = list.filter((s) => s.absentDay !== classDay);
-    // Skipped students sit out the rest of this cycle, even without an AF record this week.
-    const fresh = present.filter((s) => s.afWeek !== week && s.id !== curIdIn && !skipped.includes(s.id));
-    if (fresh.length > 0) return { phase: "fresh", ids: fresh.map((s) => s.id), reset: false };
-    let reset = false;
-    let pool = present.filter((s) => !afQueue.includes(s.id));
-    if (pool.length === 0) {
-      // New cycle: skips expire, so anyone still without AF this week keeps priority.
-      // A skipped student never had their turn, so they are not "the current one" to avoid here.
-      const freshAll = present.filter((s) => s.afWeek !== week && (s.id !== curIdIn || skipped.includes(s.id)));
-      if (freshAll.length > 0) return { phase: "fresh", ids: freshAll.map((s) => s.id), reset: true };
-      pool = present; reset = true;
-    }
-    const withoutCurrent = pool.filter((s) => s.id !== curId);
-    if (withoutCurrent.length > 0) pool = withoutCurrent;
-    else if (!reset) {
-      // Only the current student is left in this cycle: start a new cycle, still avoiding the current one.
-      const alt = present.filter((s) => s.id !== curId);
-      if (alt.length > 0) { pool = alt; reset = true; }
-    }
-    return { phase: "cycle", ids: pool.map((s) => s.id), reset };
-  };
+  const afEligible = (list: Student[], curIdIn: string | null, skipped: string[] = afSkipped) =>
+    afEligibility(list.filter((s) => s.absentDay !== classDay), curIdIn,
+      { week, queue: afQueue, last: afLast, prev: afPrev, skipped, carry: afCarry });
 
   const afCommit = (list: Student[], id: string, _phase: "fresh" | "cycle", reset = false) => {
     // Every AF turn (fresh or cycle) counts toward the current cycle, so present students
     // are all visited before anyone repeats.
     const ids = new Set(list.map((s) => s.id));
     setAfQueue(reset ? [id] : [...afQueue.filter((x) => x !== id && ids.has(x)), id]);
+    if (afLast && afLast !== id) setAfPrev(afLast);
     setAfLast(id);
-    if (reset) setAfSkipped([]);
+    // A new cycle turns this cycle's skips into next-cycle priority; serving someone removes theirs.
+    if (reset) { setAfCarry(afSkipped.filter((x) => x !== id && ids.has(x))); setAfSkipped([]); }
+    else setAfCarry((c) => c.filter((x) => x !== id));
     showAfPick(list, id);
   };
 
@@ -965,11 +957,11 @@ function FairTurns() {
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     const list = confirmTurn(students, pend.af, "af", classDay, week);
-    const { phase, ids, reset } = afEligible(list, currentId);
-    if (ids.length === 0) return;
+    const { phase, auto, reset } = afEligible(list, currentId);
+    if (auto.length === 0) return;
     lastNextAt.current = now;
     clearSkipUndo();
-    afCommit(list, ids[Math.floor(Math.random() * ids.length)]!, phase, reset);
+    afCommit(list, auto[Math.floor(Math.random() * auto.length)]!, phase, reset);
     void nextDing.current!.play();
   };
 
@@ -1040,7 +1032,7 @@ function FairTurns() {
     setPickNotice(null);
     setStudents(confirmTurn(students, pend.normal, "normal", classDay, week));
     if (startsNewRound) { onOpenNewRound(); setRound((r) => r + 1); }
-    commitPick(target, startsNewRound);
+    commitPick(target, startsNewRound, startsNewRound ? carryFrom(presentStudents) : []);
   };
 
   const absenceButton = (s: Student, small = false) => (
@@ -1093,7 +1085,7 @@ function FairTurns() {
       onOpenNewRound();
       setRound((r) => r + 1);
     }
-    commitPick(picked, startsNewRound);
+    commitPick(picked, startsNewRound, startsNewRound ? carryFrom(presentStudents) : []);
     void nextDing.current!.play(); // once per accepted NEXT, from the handler (never an updater/effect)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   };
@@ -1111,9 +1103,10 @@ function FairTurns() {
       const skipped = [...afSkipped.filter((x) => x !== p.id), p.id];
       setAfSkipped(skipped);
       setPend((x) => ({ ...x, af: null }));
-      const { phase, ids, reset } = afEligible(students, p.id, skipped);
+      const { phase, ids, auto, reset } = afEligible(students, p.id, skipped);
       // Skip never resets a cycle: only unvisited candidates of the current cycle; otherwise end it and wait for NEXT.
-      const pool = reset ? [] : ids.filter((x) => !skipped.includes(x));
+      const preferred = auto.filter((x) => !skipped.includes(x));
+      const pool = reset ? [] : preferred.length > 0 ? preferred : ids.filter((x) => !skipped.includes(x));
       if (pool.length > 0) { afCommit(students, pool[Math.floor(Math.random() * pool.length)]!, phase, false); return; }
       setTimerRunning(false); setTimeUp(false);
       return;
