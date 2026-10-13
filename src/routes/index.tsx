@@ -3,7 +3,7 @@ import { nextMemory, pickNormal, type NormalMemory } from "@/lib/fair-pick";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Music, Volume2, VolumeX, ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserMinus, UserX, Users, X } from "lucide-react";
+import { List as ListIcon, Settings as SettingsIcon, ChevronUp, Music, Volume2, VolumeX, ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserMinus, UserX, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Soundboard } from "@/components/Soundboard";
 import { NextDing, SoundEngine, type EffectId } from "@/lib/sound-effects";
@@ -415,6 +415,8 @@ function FairTurns() {
   const [compact, setCompact] = useState(false);
   const [lastPicked, setLastPicked] = useState<Student | null>(null);
   const [showRoster, setShowRoster] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
   const [miniView, setMiniView] = useState<FloatView>("controls");
   // Soundboard: remembers which view (and its real outer size) opened it, so Back restores both.
   const soundsSource = useRef<{ view: Exclude<FloatView, "sounds">; size: { width: number; height: number } | null }>({ view: "controls", size: null });
@@ -1260,6 +1262,25 @@ function FairTurns() {
     }
   };
 
+  // Settings panel is presentation-only: toggling never touches timer or turn state.
+  const toggleSettings = () => {
+    setSettingsOpen((open) => !open);
+    const win = pipWin;
+    if (!win) return;
+    // The gear click is a gesture inside the PiP window, so resizeTo is allowed; failures are harmless (panel scrolls).
+    requestAnimationFrame(() => {
+      try {
+        const el = controlsRef.current;
+        if (!el) return;
+        const frameH = Math.max(0, win.outerHeight - win.innerHeight);
+        const target = Math.min(win.screen.availHeight, el.scrollHeight + frameH);
+        if (Math.abs(target - win.outerHeight) > 4) win.resizeTo(win.outerWidth, target);
+      } catch {
+        /* browser refused; overflow scroll keeps everything reachable */
+      }
+    });
+  };
+
   const showMiniView = () => {
     if (pipWin) {
       pipExpandedSize.current = { width: pipWin.outerWidth, height: pipWin.outerHeight };
@@ -1997,89 +2018,146 @@ function FairTurns() {
   );
 
   const controlsView = (
-    <div className="relative flex h-full min-h-0 w-full flex-col justify-between gap-2 bg-background p-3 text-foreground">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1">
-          <Button size="sm" className="h-8 rounded-lg px-2 text-xs font-bold" onClick={() => setMiniView("tally")}>
-            Tally marks
-          </Button>
-          <Button
-            size="sm"
-            variant={playingEffect ? "default" : "outline"}
-            className="h-8 rounded-lg px-2 text-xs font-bold"
-            onClick={openSounds}
-            aria-label="Sonidos"
-            title={playingEffect ? "Sonidos (efecto sonando)" : "Sonidos"}
-          >
-            <Music className={`h-3.5 w-3.5 ${playingEffect ? "animate-pulse" : ""}`} /> Sonidos
-          </Button>
-          <Button size="sm" variant="outline" className="h-8 rounded-lg px-2 text-xs font-bold" onClick={showMiniView} title="Open ultra-compact controls">
-            <Minimize2 className="h-3.5 w-3.5" /> Mini
-          </Button>
-        </div>
-        <button
-          onClick={() => setShowRoster((v) => !v)}
-          className="z-10 flex items-center gap-1 rounded-lg bg-secondary px-2 py-0.5 text-xs font-bold text-secondary-foreground"
-          aria-label="Roster"
+    <div ref={controlsRef} className="relative flex h-full min-h-0 w-full flex-col gap-2 overflow-y-auto bg-background p-2.5 text-foreground">
+      <div className="grid grid-cols-[repeat(3,minmax(0,1fr))_auto] gap-1.5">
+        <Button size="sm" variant="outline" className="h-8 min-w-0 rounded-lg px-1.5 text-xs font-bold" onClick={() => setMiniView("tally")} title="Tally marks">
+          <ListIcon className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Tally marks</span>
+        </Button>
+        <Button
+          size="sm"
+          variant={playingEffect ? "default" : "outline"}
+          className="h-8 min-w-0 rounded-lg px-1.5 text-xs font-bold"
+          onClick={openSounds}
+          aria-label="Sonidos"
+          title={playingEffect ? "Sonidos (efecto sonando)" : "Sonidos"}
         >
-          <Users className="h-3.5 w-3.5" /> {students.length}
-        </button>
+          <Music className={`h-3.5 w-3.5 shrink-0 ${playingEffect ? "animate-pulse" : ""}`} /> <span className="truncate">Sonidos</span>
+        </Button>
+        <Button size="sm" variant="outline" className="h-8 min-w-0 rounded-lg px-1.5 text-xs font-bold" onClick={showMiniView} title="Open ultra-compact controls">
+          <Minimize2 className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Mini</span>
+        </Button>
+        <Button
+          size="icon"
+          variant={settingsOpen ? "default" : "outline"}
+          className="h-8 w-8 rounded-lg"
+          onClick={toggleSettings}
+          aria-label="Ajustes"
+          aria-expanded={settingsOpen}
+          title="Ajustes"
+        >
+          <SettingsIcon className="h-4 w-4" />
+        </Button>
       </div>
       {banner?.message && (
         <div className={`truncate rounded-lg bg-primary px-2 py-1 text-center text-xs font-bold text-primary-foreground ${banner.exiting ? "animate-banner-out" : "animate-banner-in"}`}>
           {banner.message}
         </div>
       )}
-      <p
-        key={current ? current.id + String(current.total) : "empty"}
-        className="animate-pop-in truncate text-center font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight text-primary"
-      >
-        {current?.name ?? "—"}
-      </p>
-      {showRoster && rosterPanel}
-      {(useTimer || afMode) && (
-        <div className="space-y-1">
-          <div className={noTimer ? "invisible" : ""} aria-hidden={noTimer || undefined}>
-            <p className={`text-center text-2xl font-extrabold tabular-nums ${timeColor}`}>
-              {remaining === 0 && timeUp ? "Time's up" : mmss(remaining)}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <p
+          key={current ? current.id + String(current.total) : "empty"}
+          className="animate-pop-in min-w-0 truncate font-[family-name:var(--font-display)] text-4xl font-extrabold leading-tight text-primary"
+          title={current?.name}
+        >
+          {current?.name ?? "—"}
+        </p>
+        {(useTimer || afMode) && (
+          <div className="text-right leading-none">
+            <p className={`font-[family-name:var(--font-display)] text-3xl font-extrabold tabular-nums ${noTimer ? "text-accent-foreground" : timeColor}`} aria-label={noTimer ? "No timer" : `Time remaining ${mmss(remaining)}`}>
+              {noTimer ? "∞" : mmss(remaining)}
             </p>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-              <div
-                className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
-                style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
-              />
-            </div>
+            <p className={`mt-0.5 text-xs font-semibold ${remaining === 0 && timeUp && !noTimer ? timeColor : "text-muted-foreground"}`}>
+              {noTimer ? "sin límite" : remaining === 0 && timeUp ? "Time's up" : `de ${turnSeconds}s`}
+            </p>
           </div>
-          {!afMode && timerLengthControls}
+        )}
+      </div>
+      {(useTimer || afMode) && (
+        <div className={`h-1.5 w-full overflow-hidden rounded-full bg-secondary ${noTimer ? "invisible" : ""}`} aria-hidden>
+          <div
+            className={`h-full rounded-full transition-all duration-1000 ease-linear ${barColor}`}
+            style={{ width: `${Math.max(0, timeRatio * 100)}%` }}
+          />
         </div>
       )}
-      {modeControls}
-      <div className="flex items-center gap-2">
+      <div className="grid grid-cols-2 rounded-lg border border-border p-0.5" role="group" aria-label="Participation mode">
+        <Button size="sm" variant={afMode ? "ghost" : "default"} aria-pressed={!afMode} className="h-7 rounded-md px-2 text-xs font-bold" onClick={() => switchMode(false)}>Normal</Button>
+        <Button size="sm" variant={afMode ? "default" : "ghost"} aria-pressed={afMode} className="h-7 min-w-0 truncate rounded-md px-2 text-xs font-bold" onClick={() => switchMode(true)}>Automatic Fluency</Button>
+      </div>
+      <div className="flex items-center gap-1.5">
         <Button
           onClick={handleNext}
           disabled={presentStudents.length === 0}
-          className="h-12 flex-1 rounded-2xl text-xl font-extrabold tracking-wide"
+          className="h-11 min-w-0 flex-1 rounded-xl text-xl font-extrabold tracking-wide"
+          aria-label="Next — confirms the current turn"
         >
           NEXT
         </Button>
-        <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Skip this turn" aria-label="Skip this turn">
+        <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-xl text-lg font-extrabold" onClick={handleSkip} disabled={!canSkip} title="Skip this turn" aria-label="Skip this turn">
           ✗
         </Button>
-        {dingButton("md")}
         {(useTimer || afMode) && (
           <>
-            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pause" : "Resume"}>
+            <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-xl" onClick={toggleTimer} disabled={noTimer} aria-label={timerRunning ? "Pausar timer" : "Reanudar timer"} title={timerRunning ? "Pausar" : "Reanudar"}>
               {timerRunning ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
             </Button>
-            <Button variant="outline" size="icon" className="h-12 w-12 rounded-xl" onClick={resetTimer} aria-label="Reset">
+            <Button variant="outline" size="icon" className="h-11 w-11 shrink-0 rounded-xl" onClick={resetTimer} aria-label="Reiniciar timer" title="Reiniciar timer">
               <RotateCcw className="h-5 w-5" />
             </Button>
           </>
         )}
       </div>
-      <p className="text-center text-xs font-semibold text-muted-foreground">
-        {afProgress ?? `Round ${round} · ${doneCount}/${presentStudents.length} · ${noTimer ? "no timer" : `${turnSeconds}s`}`}
-      </p>
+      <div className="flex items-center justify-between gap-2 text-xs font-semibold text-muted-foreground">
+        <p className="min-w-0 truncate">
+          {afProgress ?? `Round ${round} · ${doneCount}/${presentStudents.length}`}
+        </p>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            onClick={() => setShowRoster((v) => !v)}
+            className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 font-bold text-foreground hover:bg-secondary"
+            aria-label="Roster"
+            aria-expanded={showRoster}
+          >
+            <Users className="h-3.5 w-3.5" /> {students.length}
+          </button>
+          <span className="h-4 w-px bg-border" aria-hidden />
+          {dingButton("sm")}
+        </div>
+      </div>
+      {showRoster && rosterPanel}
+      {settingsOpen && (
+        <section className="space-y-1.5 border-t border-border pt-2" aria-label="Tiempo por turno">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold">Tiempo por turno</h2>
+            <Button variant="ghost" size="icon" className="h-6 w-6 rounded-md" onClick={toggleSettings} aria-label="Cerrar ajustes">
+              <ChevronUp className="h-4 w-4" />
+            </Button>
+          </div>
+          {afMode ? (
+            <div className="flex flex-wrap items-center gap-1 text-xs">
+              {([30, 45] as const).map((n) => (
+                <Button key={`s${n}`} size="sm" variant={afSeconds === n ? "default" : "outline"} className="h-7 min-w-12 rounded-md px-2 text-xs font-bold"
+                  onClick={() => setAfSeconds(n)} aria-label={`${n} seconds per turn`}>{n}s</Button>
+              ))}
+              <label className="flex items-center gap-1 font-semibold text-muted-foreground">
+                Personalizado
+                <input type="number" min={10} max={600} value={afSeconds}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    const v = Math.round(Number(e.target.value));
+                    if (Number.isFinite(v)) setAfSeconds(Math.min(600, Math.max(10, v)));
+                  }}
+                  className="h-7 w-14 rounded-md border border-input bg-background px-1 text-xs text-foreground" aria-label="Automatic Fluency seconds" />s
+              </label>
+            </div>
+          ) : useTimer ? (
+            timerLengthControls
+          ) : (
+            <p className="text-xs text-muted-foreground">Timer desactivado para esta clase.</p>
+          )}
+          <p className="text-xs text-muted-foreground">En Automatic Fluency: 30s, 45s o personalizado.</p>
+        </section>
+      )}
     </div>
   );
 
