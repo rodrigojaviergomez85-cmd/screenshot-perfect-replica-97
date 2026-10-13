@@ -417,6 +417,7 @@ function FairTurns() {
   const [showRoster, setShowRoster] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const controlsRef = useRef<HTMLDivElement | null>(null);
+  const controlsContentH = useRef<number | null>(null);
   const [miniView, setMiniView] = useState<FloatView>("controls");
   // Soundboard: remembers which view (and its real outer size) opened it, so Back restores both.
   const soundsSource = useRef<{ view: Exclude<FloatView, "sounds">; size: { width: number; height: number } | null }>({ view: "controls", size: null });
@@ -1243,7 +1244,7 @@ function FairTurns() {
         ? { width: Math.max(1, soundsOuterSize().width - frame.width), height: Math.max(1, soundsOuterSize().height - frame.height) }
         : { width: 400, height: 560 };
       const w = await dpip.requestWindow(
-        miniView === "mini" ? miniContentSize : miniView === "sounds" ? soundsContentSize : { width: 320, height: 320 },
+        miniView === "mini" ? miniContentSize : miniView === "sounds" ? soundsContentSize : { width: pipExpandedSize.current ? Math.max(1, pipExpandedSize.current.width - (frame?.width ?? 0)) : 320, height: controlsContentH.current ?? 250 },
       );
       document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
         w.document.head.appendChild(node.cloneNode(true));
@@ -1332,7 +1333,9 @@ function FairTurns() {
   const closeSounds = () => {
     const { view, size } = soundsSource.current;
     setMiniView(view);
-    if (pipWin) {
+    if (pipWin && view === "controls") {
+      fitControls(size?.width);
+    } else if (pipWin) {
       const target = size ?? (view === "mini" ? MINI_PIP_OUTER_SIZE : null);
       if (target) {
         try { pipWin.resizeTo(target.width, target.height); } catch { /* Keep the same PiP window if resize is blocked. */ }
@@ -1342,10 +1345,7 @@ function FairTurns() {
 
   const expandMiniView = () => {
     setMiniView("controls");
-    const size = pipExpandedSize.current;
-    if (pipWin && size) {
-      try { pipWin.resizeTo(size.width, size.height); } catch { /* Keep the same PiP window if resize is blocked. */ }
-    }
+    fitControls(pipExpandedSize.current?.width);
   };
 
   const editRoster = () => {
@@ -1906,7 +1906,7 @@ function FairTurns() {
   const tallyView = (
     <div className="flex h-full min-h-0 w-full flex-col gap-2 bg-background p-2 text-foreground">
       <div className="flex shrink-0 items-center gap-2">
-        <Button size="sm" variant="outline" className="h-8 shrink-0 rounded-lg px-2 text-xs font-bold" onClick={() => setMiniView("controls")}>
+        <Button size="sm" variant="outline" className="h-8 shrink-0 rounded-lg px-2 text-xs font-bold" onClick={() => { setMiniView("controls"); fitControls(); }}>
           <ChevronLeft className="h-4 w-4" /> Controls
         </Button>
         <p className="min-w-0 flex-1 truncate text-right text-sm font-extrabold">{activeClassName}</p>
