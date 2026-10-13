@@ -2018,7 +2018,9 @@ function FairTurns() {
   );
 
   const controlsView = (
-    <div ref={controlsRef} className="relative flex h-full min-h-0 w-full flex-col gap-2 overflow-y-auto bg-background p-2.5 text-foreground">
+    <div className="relative h-full min-h-0 w-full overflow-y-auto bg-background text-foreground">
+      {/* Intrinsic-height wrapper: measured to fit the PiP window independent of the viewport. */}
+      <div ref={controlsRef} data-controls-content className="flex w-full flex-col gap-2 px-2.5 pt-2.5 pb-2.5">
       <div className="grid grid-cols-[repeat(3,minmax(0,1fr))_auto] gap-1.5">
         <Button size="sm" variant="outline" className="h-8 min-w-0 rounded-lg px-1.5 text-xs font-bold" onClick={() => setMiniView("tally")} title="Tally marks">
           <ListIcon className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Tally marks</span>
@@ -2067,7 +2069,7 @@ function FairTurns() {
               {noTimer ? "∞" : mmss(remaining)}
             </p>
             <p className={`mt-0.5 text-xs font-semibold ${remaining === 0 && timeUp && !noTimer ? timeColor : "text-muted-foreground"}`}>
-              {noTimer ? "sin límite" : remaining === 0 && timeUp ? "Time's up" : `de ${turnSeconds}s`}
+              {noTimer ? "sin límite" : remaining === 0 && timeUp ? "Time's up" : `de ${activeTurnSeconds || (afMode ? afSeconds : turnSeconds)}s`}
             </p>
           </div>
         )}
@@ -2113,7 +2115,7 @@ function FairTurns() {
         </p>
         <div className="flex shrink-0 items-center gap-1">
           <button
-            onClick={() => setShowRoster((v) => !v)}
+            onClick={() => { setShowRoster((v) => !v); fitControls(); }}
             className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 font-bold text-foreground hover:bg-secondary"
             aria-label="Roster"
             aria-expanded={showRoster}
@@ -2124,7 +2126,7 @@ function FairTurns() {
           {dingButton("sm")}
         </div>
       </div>
-      {showRoster && rosterPanel}
+      {showRoster ? <div className="flex max-h-64 flex-col">{rosterPanel}</div> : extraOffer && noticeLine}
       {settingsOpen && (
         <section className="space-y-1.5 border-t border-border pt-2" aria-label="Tiempo por turno">
           <div className="flex items-center justify-between">
@@ -2158,6 +2160,7 @@ function FairTurns() {
           <p className="text-xs text-muted-foreground">En Automatic Fluency: 30s, 45s o personalizado.</p>
         </section>
       )}
+      </div>
     </div>
   );
 
