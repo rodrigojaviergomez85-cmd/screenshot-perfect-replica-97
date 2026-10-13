@@ -1267,7 +1267,7 @@ function FairTurns() {
   // Settings/Roster shrinks the native window. Called only from user actions/view changes,
   // never from timer ticks. resizeTo needs a gesture inside the PiP window; refusal is harmless
   // because the outer container scrolls.
-  const fitControls = (width?: number) => {
+  const fitControls = (width?: number, anchorBottom = false) => {
     const win = pipWin;
     if (!win) return;
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -1280,11 +1280,24 @@ function FairTurns() {
         const avail = win.screen?.availHeight || 2000;
         const target = Math.min(avail, contentH + frameH);
         const w = width ?? win.outerWidth;
-        if (Math.abs(target - win.outerHeight) > 2 || w !== win.outerWidth) win.resizeTo(w, target);
+        const delta = target - win.outerHeight;
+        if (Math.abs(delta) > 2 || w !== win.outerWidth) {
+          win.resizeTo(w, target);
+          // Grow/shrink upward so the controls keep their place; moving may be refused (then the window grows down, content stays scrollable).
+          if (anchorBottom && Math.abs(delta) > 2) {
+            try { win.moveTo(win.screenX, Math.max(0, win.screenY - delta)); } catch { /* positioning not permitted */ }
+          }
+        }
       } catch {
         /* browser refused; overflow scroll keeps everything reachable */
       }
     }));
+  };
+
+  // Roster opens above the controls; presentation only.
+  const toggleRoster = () => {
+    setShowRoster((v) => !v);
+    fitControls(undefined, true);
   };
 
   // Settings panel is presentation-only: toggling never touches timer or turn state.
