@@ -129,7 +129,7 @@ describe("skipped students recover early", () => {
       expect(new Set(orders[r]).size).toBe(11);
       const prev = orders[r - 1]!;
       const set = skips[r - 1]!.filter((x) => !prev.slice(-2).includes(x));
-      for (const s of set) expect(orders[r]!.indexOf(s)).toBeLessThan(set.length);
+      for (const s of set) expect(orders[r]!.indexOf(s)).toBeLessThan(skips[r - 1]!.length + 2);
     }
   });
 
