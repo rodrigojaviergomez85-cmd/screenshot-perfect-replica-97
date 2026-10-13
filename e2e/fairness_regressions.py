@@ -119,6 +119,19 @@ async def main():
         await pg.reload(); await pg.wait_for_timeout(1500)
         merged = await pg.evaluate(f"localStorage.getItem('{KEY}')"); leg = await pg.evaluate("localStorage.getItem('fair-turns-class')")
         check("legacy merged then removed", merged is not None and "Lia" in merged and leg is None)
+        await ctx.close()
+
+        # 5) Old saves without recency/carry fields load; new fields persist and survive reload
+        ctx = await b.new_context(viewport={"width": 1280, "height": 1800}); pg = await ctx.new_page()
+        await pg.goto(U); old = seed(); old["classes"][0]["normal"] = {"day": DAY, "last": "Ana", "avoid": None}
+        await pg.evaluate(f"localStorage.setItem('{KEY}', {json.dumps(json.dumps(old))})")
+        await pg.reload(); await pg.wait_for_timeout(1200); await open_class(pg)
+        for _ in range(2):
+            await pg.keyboard.press("Space"); await pg.wait_for_timeout(400)
+        n = (await stored(pg))["classes"][0]["normal"]
+        check("legacy normal memory migrated with prev/carry", "prev" in n and isinstance(n.get("carry"), list), str(n))
+        await pg.reload(); await pg.wait_for_timeout(1200)
+        check("recency memory survives reload", (await stored(pg))["classes"][0]["normal"]["prev"] == n["prev"])
         await ctx.close(); await b.close()
     sys.exit(1 if fails else 0)
 
