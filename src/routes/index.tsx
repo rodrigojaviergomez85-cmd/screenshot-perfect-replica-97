@@ -2131,19 +2131,10 @@ function FairTurns() {
           {afProgress ?? `Round ${round} · ${doneCount}/${presentStudents.length}`}
         </p>
         <div className="flex shrink-0 items-center gap-1">
-          <button
-            onClick={() => { setShowRoster((v) => !v); fitControls(); }}
-            className="flex items-center gap-1 rounded-lg px-1.5 py-0.5 font-bold text-foreground hover:bg-secondary"
-            aria-label="Roster"
-            aria-expanded={showRoster}
-          >
-            <Users className="h-3.5 w-3.5" /> {students.length}
-          </button>
-          <span className="h-4 w-px bg-border" aria-hidden />
           {dingButton("sm")}
         </div>
       </div>
-      {showRoster ? <div className="flex max-h-64 flex-col">{rosterPanel}</div> : extraOffer && noticeLine}
+      {!showRoster && extraOffer && noticeLine}
       {settingsOpen && (
         <section className="space-y-1.5 border-t border-border pt-2" aria-label="Tiempo por turno">
           <div className="flex items-center justify-between">
