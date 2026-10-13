@@ -628,7 +628,7 @@ function FairTurns() {
         setStudents((prev) => prev.map((s) => ({ ...s, afWeek: undefined })));
         setClasses((prev) => prev.map((c) => ({ ...c, students: c.students.map((s) => ({ ...s, afWeek: undefined })) })));
         setClasses((prev) => prev.map((c) => ({ ...c, af: { week: thisWeek, queue: [], lastId: null } })));
-        setAfQueue([]); setAfIndex(-1); setAfSkipped([]); setAfLast(null);
+        setAfQueue([]); setAfIndex(-1); setAfSkipped([]); setAfLast(null); setAfPrev(null); setAfCarry([]);
         setPend((p) => ({ ...p, af: null }));
       }
       const today = localDay();
