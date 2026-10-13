@@ -3,7 +3,7 @@ import { nextMemory, pickNormal, type NormalMemory } from "@/lib/fair-pick";
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Music, Volume2, VolumeX, ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserMinus, UserX, Users, X } from "lucide-react";
+import { List as ListIcon, Settings as SettingsIcon, ChevronUp, Music, Volume2, VolumeX, ArrowLeft, Check, ChevronDown, ChevronLeft, MoreVertical, Pencil, Maximize2, Minimize2, Pause, PictureInPicture2, Play, Plus, RotateCcw, Trash2, UserCheck, UserMinus, UserX, Users, X } from "lucide-react";
 import { ZoomImport } from "@/components/ZoomImport";
 import { Soundboard } from "@/components/Soundboard";
 import { NextDing, SoundEngine, type EffectId } from "@/lib/sound-effects";
@@ -415,6 +415,8 @@ function FairTurns() {
   const [compact, setCompact] = useState(false);
   const [lastPicked, setLastPicked] = useState<Student | null>(null);
   const [showRoster, setShowRoster] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const controlsRef = useRef<HTMLDivElement | null>(null);
   const [miniView, setMiniView] = useState<FloatView>("controls");
   // Soundboard: remembers which view (and its real outer size) opened it, so Back restores both.
   const soundsSource = useRef<{ view: Exclude<FloatView, "sounds">; size: { width: number; height: number } | null }>({ view: "controls", size: null });
@@ -1258,6 +1260,25 @@ function FairTurns() {
       setPipSupported(false);
       setCompact(true);
     }
+  };
+
+  // Settings panel is presentation-only: toggling never touches timer or turn state.
+  const toggleSettings = () => {
+    setSettingsOpen((open) => !open);
+    const win = pipWin;
+    if (!win) return;
+    // The gear click is a gesture inside the PiP window, so resizeTo is allowed; failures are harmless (panel scrolls).
+    requestAnimationFrame(() => {
+      try {
+        const el = controlsRef.current;
+        if (!el) return;
+        const frameH = Math.max(0, win.outerHeight - win.innerHeight);
+        const target = Math.min(win.screen.availHeight, el.scrollHeight + frameH);
+        if (Math.abs(target - win.outerHeight) > 4) win.resizeTo(win.outerWidth, target);
+      } catch {
+        /* browser refused; overflow scroll keeps everything reachable */
+      }
+    });
   };
 
   const showMiniView = () => {
