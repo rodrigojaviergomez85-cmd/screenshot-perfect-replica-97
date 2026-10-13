@@ -2038,8 +2038,13 @@ function FairTurns() {
     <div className="relative h-full min-h-0 w-full overflow-y-auto bg-background text-foreground">
       {/* Intrinsic-height wrapper: measured to fit the PiP window independent of the viewport. */}
       <div ref={controlsRef} data-controls-content className="flex w-full flex-col gap-2 px-2.5 pt-2.5 pb-2.5">
-      <div className="grid grid-cols-[repeat(3,minmax(0,1fr))_auto] gap-1.5">
-        <Button size="sm" variant="outline" className="h-8 min-w-0 rounded-lg px-1.5 text-xs font-bold" onClick={() => setMiniView("tally")} title="Tally marks">
+      {showRoster && (
+        <section className="flex h-72 flex-col border-b border-border pb-2" aria-label="Students">
+          {rosterPanel}
+        </section>
+      )}
+      <div className="grid grid-cols-[repeat(3,minmax(0,1fr))_auto_auto] gap-1.5">
+        <Button size="sm" variant="outline" className="h-8 min-w-0 rounded-lg px-1.5 text-xs font-bold" onClick={() => setMiniView("tally")} title="Tally marks" aria-label="Tally marks">
           <ListIcon className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Tally marks</span>
         </Button>
         <Button
@@ -2052,13 +2057,24 @@ function FairTurns() {
         >
           <Music className={`h-3.5 w-3.5 shrink-0 ${playingEffect ? "animate-pulse" : ""}`} /> <span className="truncate">Sonidos</span>
         </Button>
-        <Button size="sm" variant="outline" className="h-8 min-w-0 rounded-lg px-1.5 text-xs font-bold" onClick={showMiniView} title="Open ultra-compact controls">
+        <Button size="sm" variant="outline" className="h-8 min-w-0 rounded-lg px-1.5 text-xs font-bold" onClick={showMiniView} title="Open ultra-compact controls" aria-label="Mini">
           <Minimize2 className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Mini</span>
+        </Button>
+        <Button
+          size="sm"
+          variant={showRoster ? "default" : "outline"}
+          className="h-8 min-w-9 shrink-0 gap-1 rounded-lg px-2 text-xs font-bold"
+          onClick={toggleRoster}
+          aria-label={`Estudiantes (${students.length})`}
+          aria-expanded={showRoster}
+          title="Estudiantes"
+        >
+          <Users className="h-4 w-4 shrink-0" /> {students.length}
         </Button>
         <Button
           size="icon"
           variant={settingsOpen ? "default" : "outline"}
-          className="h-8 w-8 rounded-lg"
+          className="h-8 w-8 shrink-0 rounded-lg"
           onClick={toggleSettings}
           aria-label="Ajustes"
           aria-expanded={settingsOpen}
