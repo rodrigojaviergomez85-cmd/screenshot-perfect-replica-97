@@ -1262,23 +1262,34 @@ function FairTurns() {
     }
   };
 
-  // Settings panel is presentation-only: toggling never touches timer or turn state.
-  const toggleSettings = () => {
-    setSettingsOpen((open) => !open);
+  // Fit the PiP window height to the intrinsic Controls content (not the viewport), so closing
+  // Settings/Roster shrinks the native window. Called only from user actions/view changes,
+  // never from timer ticks. resizeTo needs a gesture inside the PiP window; refusal is harmless
+  // because the outer container scrolls.
+  const fitControls = (width?: number) => {
     const win = pipWin;
     if (!win) return;
-    // The gear click is a gesture inside the PiP window, so resizeTo is allowed; failures are harmless (panel scrolls).
-    requestAnimationFrame(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const el = controlsRef.current;
+      if (!el) return;
+      const contentH = Math.ceil(el.getBoundingClientRect().height);
+      controlsContentH.current = contentH;
       try {
-        const el = controlsRef.current;
-        if (!el) return;
         const frameH = Math.max(0, win.outerHeight - win.innerHeight);
-        const target = Math.min(win.screen.availHeight, el.scrollHeight + frameH);
-        if (Math.abs(target - win.outerHeight) > 4) win.resizeTo(win.outerWidth, target);
+        const avail = win.screen?.availHeight || 2000;
+        const target = Math.min(avail, contentH + frameH);
+        const w = width ?? win.outerWidth;
+        if (Math.abs(target - win.outerHeight) > 2 || w !== win.outerWidth) win.resizeTo(w, target);
       } catch {
         /* browser refused; overflow scroll keeps everything reachable */
       }
-    });
+    }));
+  };
+
+  // Settings panel is presentation-only: toggling never touches timer or turn state.
+  const toggleSettings = () => {
+    setSettingsOpen((open) => !open);
+    fitControls();
   };
 
   const showMiniView = () => {
