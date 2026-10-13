@@ -1293,6 +1293,12 @@ function FairTurns() {
     fitControls();
   };
 
+  // Re-fit when the PiP window opens or the extra-turn prompt appears/disappears (presentation only).
+  useEffect(() => {
+    if (pipWin && miniView === "controls") fitControls();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipWin, !!extraOffer]);
+
   const showMiniView = () => {
     if (pipWin) {
       pipExpandedSize.current = { width: pipWin.outerWidth, height: pipWin.outerHeight };
