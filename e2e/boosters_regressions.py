@@ -26,7 +26,7 @@ async def open_booster(pg, label):
 
 async def run(b, width):
     pg = await (await b.new_context(viewport={"width": width, "height": 800})).new_page()
-    errs = []; pg.on("pageerror", lambda e: errs.append(str(e))); pg.on("console", lambda m: print("CON", m.text) if ("STOP" in m.text or "DONE" in m.text) else None)
+    errs = []; pg.on("pageerror", lambda e: errs.append(str(e)))
     await pg.goto(U); await pg.evaluate(f"localStorage.setItem('{KEY}', {json.dumps(json.dumps(SEED))})")
     await pg.reload(); await pg.wait_for_timeout(1200)
     await pg.get_by_text("Test", exact=True).first.click(); await pg.wait_for_timeout(600)
@@ -59,7 +59,6 @@ async def run(b, width):
     await pg.get_by_role("button", name="Skip this turn").last.click(); await pg.wait_for_timeout(500)
     totals, pending = await state(pg)
     check(f"{w} X during booster: no tally change, booster stopped", totals == before[0] and await pg.get_by_text("Turno en pausa").count() == 0, str(totals))
-    print("DBG", (await pg.locator("[data-soundboard]").inner_text())[:300].replace("\n"," / "))
     check(f"{w} X interrupt shows menu, no false completion", await pg.get_by_text("Great job!").count() == 0 and await pg.get_by_role("button", name="Opposite Challenge, 30 segundos").count() == 1)
 
     # NEXT during booster credits the shown student exactly once.
