@@ -59,6 +59,7 @@ async def run(b, width):
     await pg.get_by_role("button", name="Skip this turn").last.click(); await pg.wait_for_timeout(500)
     totals, pending = await state(pg)
     check(f"{w} X during booster: no tally change, booster stopped", totals == before[0] and await pg.get_by_text("Turno en pausa").count() == 0, str(totals))
+    print("DBG", (await pg.locator("[data-soundboard]").inner_text())[:300].replace("\n"," / "))
     check(f"{w} X interrupt shows menu, no false completion", await pg.get_by_text("Great job!").count() == 0 and await pg.get_by_role("button", name="Opposite Challenge, 30 segundos").count() == 1)
 
     # NEXT during booster credits the shown student exactly once.
