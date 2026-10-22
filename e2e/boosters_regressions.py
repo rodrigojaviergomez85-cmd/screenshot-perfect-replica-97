@@ -59,6 +59,7 @@ async def run(b, width):
     await pg.get_by_role("button", name="Skip this turn").last.click(); await pg.wait_for_timeout(500)
     totals, pending = await state(pg)
     check(f"{w} X during booster: no tally change, booster stopped", totals == before[0] and await pg.get_by_text("Turno en pausa").count() == 0, str(totals))
+    check(f"{w} X interrupt shows menu, no false completion", await pg.get_by_text("Great job!").count() == 0 and await pg.get_by_role("button", name="Opposite Challenge, 30 segundos").count() == 1)
 
     # NEXT during booster credits the shown student exactly once.
     shown = pending["normal"]["id"] if pending and pending.get("normal") else None
@@ -68,6 +69,7 @@ async def run(b, width):
     await pg.get_by_role("button", name="Start", exact=True).click(); await pg.wait_for_timeout(400)
     await pg.get_by_role("button", name=NEXT).last.click(); await pg.wait_for_timeout(500)
     totals2, _ = await state(pg)
+    check(f"{w} NEXT interrupt shows menu, no false completion", await pg.get_by_text("Great job!").count() == 0 and await pg.get_by_text("sigue en pausa").count() == 0)
     check(f"{w} NEXT during booster credits once", shown and sum(totals2.values()) == 1 and totals2[shown] == 1, str(totals2))
     await pg.screenshot(path=f"/tmp/boosters_{width}.png")
     check(f"{w} no page errors", not errs, str(errs))

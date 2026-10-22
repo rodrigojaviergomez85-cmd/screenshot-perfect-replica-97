@@ -45,7 +45,8 @@ export function Boosters({ volume, onStart, registerStop, onActiveChange, onBack
   useEffect(() => {
     const active = status === "running" || status === "paused";
     onActiveChange(active);
-    registerStop(active ? () => { halt(); setStatus("done"); } : null);
+    // External stop (NEXT/X/manual/mode/Stop) is an interruption, not a completion: back to the menu.
+    registerStop(active ? () => { halt(); setStatus("ready"); setSelected(null); setElapsed(0); } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
   useEffect(() => () => { registerStop(null); onActiveChange(false); }, [registerStop, onActiveChange]);
