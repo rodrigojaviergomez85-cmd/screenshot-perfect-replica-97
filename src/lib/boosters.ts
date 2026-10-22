@@ -31,7 +31,7 @@ export const BEAT_PATTERNS: Slot[][] = [
   ["clap", "rest", "clap", "clap"],
   ["clap", "clap", "clap", "clap"],
 ];
-const SLOT_MS = 800;
+const SLOT_MS = 20000 / 24; // 3 patterns x (listen + copy) x 4 slots fill exactly 20s
 const PHASE_MS = SLOT_MS * BEAT_PATTERNS[0]!.length; // listen 3.2s, copy 3.2s
 export const OPPOSITE: Record<string, { es: string; opposite: string; oppositeEs: string }> = {
   UP: { es: "arriba", opposite: "DOWN", oppositeEs: "abajo" },

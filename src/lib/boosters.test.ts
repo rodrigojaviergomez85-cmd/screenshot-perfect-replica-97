@@ -38,10 +38,10 @@ describe("booster cues", () => {
 
   it("Copy My Beat: three patterns, listen then copy", () => {
     expect(boosterCue("beat", 0)).toMatchObject({ kind: "listen", pattern: 0, slot: 0, clap: true });
-    expect(boosterCue("beat", 1700)).toMatchObject({ kind: "listen", pattern: 0, slot: 2, clap: false });
-    expect(boosterCue("beat", 3300)).toMatchObject({ kind: "copy", pattern: 0 });
-    expect(boosterCue("beat", 6500)).toMatchObject({ kind: "listen", pattern: 1, slot: 0 });
-    expect(boosterCue("beat", 12900)).toMatchObject({ kind: "listen", pattern: 2 });
+    expect(boosterCue("beat", 1800)).toMatchObject({ kind: "listen", pattern: 0, slot: 2, clap: false });
+    expect(boosterCue("beat", 3400)).toMatchObject({ kind: "copy", pattern: 0 });
+    expect(boosterCue("beat", 6700)).toMatchObject({ kind: "listen", pattern: 1, slot: 0 });
+    expect(boosterCue("beat", 13400)).toMatchObject({ kind: "listen", pattern: 2 });
   });
 
   it("Opposite: a new command every 3s", () => {
