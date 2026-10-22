@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Boosters } from "@/components/Boosters";
 import { ArrowLeft, ExternalLink, Pencil, Play, Plus, Square, Star, Trash2, Volume1, Volume2, VolumeX, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EFFECTS, type EffectId } from "@/lib/sound-effects";
@@ -18,11 +19,34 @@ type Props = {
   storageWarning?: boolean;
   nextDing: boolean;
   onNextDing: () => void;
+  onBoosterStart: () => void;
+  registerBoosterStop: (stop: (() => void) | null) => void;
+  onBoosterActive: (active: boolean) => void;
 };
+
+type Tab = "sounds" | "boosters" | "music";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "sounds", label: "Sonidos" },
+  { id: "boosters", label: "Boosters" },
+  { id: "music", label: "Mi música" },
+];
 
 type Draft = { id: string | null; name: string; url: string; error: string | null };
 
-export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, onLinksChange, backLabel, onBack, footer, storageWarning, nextDing, onNextDing }: Props) {
+export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, onLinksChange, backLabel, onBack, footer, storageWarning, nextDing, onNextDing, onBoosterStart, registerBoosterStop, onBoosterActive }: Props) {
+  // Every open starts on Boosters (component remounts per open); switching tabs never starts audio.
+  const [tab, setTab] = useState<Tab>("boosters");
+  const boosterStop = useRef<(() => void) | null>(null);
+  const register = useCallback((fn: (() => void) | null) => { boosterStop.current = fn; registerBoosterStop(fn); }, [registerBoosterStop]);
+  const stopAll = () => { boosterStop.current?.(); onStop(); setNowPlaying(null); };
+  const switchTab = (t: Tab) => {
+    if (t === tab) return;
+    boosterStop.current?.();
+    onStop();
+    setNowPlaying(null); // leaving Mi música unmounts the embedded player
+    setDraft(null);
+    setTab(t);
+  };
   const [draft, setDraft] = useState<Draft | null>(null);
   const [undo, setUndo] = useState<{ link: MusicLink; index: number } | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -85,16 +109,32 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
           size="sm"
           variant="outline"
           className="h-8 shrink-0 rounded-lg border-destructive px-2 text-xs font-bold text-destructive hover:bg-destructive/10 hover:text-destructive"
-          onClick={onStop}
-          aria-label="Parar sonidos"
+          onClick={stopAll}
+          aria-label="Parar todo el audio"
         >
-          <Square className="h-3 w-3 fill-current" /> Parar sonidos
+          <Square className="h-3 w-3 fill-current" /> Parar
         </Button>
+      </div>
+      <div role="tablist" aria-label="Panel de audio" className="grid grid-cols-3 gap-1 px-3 pt-2">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => switchTab(t.id)}
+            className={`h-7 min-w-0 truncate rounded-lg px-1 text-xs font-extrabold ${tab === t.id ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground hover:bg-accent"}`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 py-2">
+        {tab === "boosters" && (
+          <Boosters volume={volume} onStart={() => { onStop(); onBoosterStart(); }} registerStop={register} onActiveChange={onBoosterActive} />
+        )}
+        {tab === "sounds" && (
         <section aria-label="Sonidos rápidos">
-          <h2 className="mb-1.5 font-[family-name:var(--font-display)] text-sm font-extrabold">Sonidos rápidos</h2>
           <div className="grid grid-cols-3 gap-1.5">
             {EFFECTS.map((e) => {
               const active = playing === e.id;
@@ -141,8 +181,10 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
             {playingLabel ? `Sonando: ${playingLabel}` : ""}
           </p>
         </section>
+        )}
 
-        <section aria-label="Mi música" className="border-t border-border pt-2">
+        {tab === "music" && (
+        <section aria-label="Mi música">
           <div className="mb-1 flex items-center justify-between gap-2">
             <h2 className="font-[family-name:var(--font-display)] text-sm font-extrabold">Mi música</h2>
             {!draft && (
@@ -154,7 +196,7 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
           {storageWarning && (
             <p role="alert" className="mb-1 text-xs font-semibold text-destructive">No se pudo guardar en este navegador; los cambios pueden perderse al recargar.</p>
           )}
-          <p className="mb-2 text-xs text-muted-foreground">Pulsa una canción para verla aquí; usa los controles del video. Al salir del tablero, se detiene la música.</p>
+          <p className="mb-2 text-xs text-muted-foreground">Pulsa una canción para verla aquí. Al cambiar de pestaña, se detiene la música.</p>
 
           {current && (
             <div ref={playerRef} className="mb-2 rounded-xl border border-border bg-card p-2" aria-label={`Reproductor: ${current.name}`} role="region">
@@ -165,7 +207,7 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
                 </Button>
               </div>
               {embed ? (
-                <div className="mx-auto w-full max-w-[400px]" style={{ minWidth: 200 }}>
+                <div className="mx-auto w-full" style={{ minWidth: 200, maxWidth: "min(400px, calc((100vh - 230px) * 16 / 9))" }}>
                   <iframe
                     key={embed}
                     src={embed}
@@ -278,6 +320,7 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
             </ul>
           )}
         </section>
+        )}
       </div>
 
       <div className="border-t border-border px-3 py-2">{footer}</div>
