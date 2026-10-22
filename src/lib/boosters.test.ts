@@ -55,7 +55,7 @@ describe("booster audio", () => {
   const ctx = () => {
     const param = { setValueAtTime() {}, exponentialRampToValueAtTime() {} };
     const node = () => { const n: Record<string, unknown> = { gain: param, frequency: param, type: "" }; n["connect"] = () => n; n["disconnect"] = () => {}; n["start"] = () => {}; n["stop"] = () => {}; return n; };
-    return { state: "running", currentTime: 0, destination: node(), createOscillator: node, createGain: node, resume: async () => {}, close: async () => {} } as unknown as AudioContext;
+    return { state: "running", currentTime: 0, destination: node(), createOscillator: node, createGain: node, resume: async () => {}, close: () => Promise.reject(new Error("closed")) } as unknown as AudioContext;
   };
   it("stop clears every scheduled node; sound-off plays nothing", () => {
     const a = new BoosterAudio(ctx);
@@ -63,8 +63,15 @@ describe("booster audio", () => {
     expect(a.activeNodes).toBe(1);
     a.stop();
     expect(a.activeNodes).toBe(0);
+    // Ended nodes release themselves (onended), so nothing piles up.
+    const b = new BoosterAudio(ctx);
+    for (let i = 0; i < 3; i++) b.play({ kind: "say", step: i, word: "UP" });
+    expect(b.activeNodes).toBe(3);
+    (b as unknown as { nodes: { onended: () => void }[] }).nodes.slice().forEach((n) => n.onended());
+    expect(b.activeNodes).toBe(0);
     a.enabled = false;
     a.play({ kind: "say", step: 1, word: "UP" });
     expect(a.activeNodes).toBe(0);
+    expect(() => a.close()).not.toThrow(); // rejected close is harmless
   });
 });

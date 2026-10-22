@@ -22,6 +22,7 @@ type Props = {
   onBoosterStart: () => void;
   registerBoosterStop: (stop: (() => void) | null) => void;
   onBoosterActive: (active: boolean) => void;
+  onBackToClass: () => void;
 };
 
 type Tab = "sounds" | "boosters" | "music";
@@ -33,7 +34,7 @@ const TABS: { id: Tab; label: string }[] = [
 
 type Draft = { id: string | null; name: string; url: string; error: string | null };
 
-export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, onLinksChange, backLabel, onBack, footer, storageWarning, nextDing, onNextDing, onBoosterStart, registerBoosterStop, onBoosterActive }: Props) {
+export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, onLinksChange, backLabel, onBack, footer, storageWarning, nextDing, onNextDing, onBoosterStart, registerBoosterStop, onBoosterActive, onBackToClass }: Props) {
   // Every open starts on Boosters (component remounts per open); switching tabs never starts audio.
   const [tab, setTab] = useState<Tab>("boosters");
   const boosterStop = useRef<(() => void) | null>(null);
@@ -131,7 +132,7 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 py-2">
         {tab === "boosters" && (
-          <Boosters volume={volume} onStart={() => { onStop(); onBoosterStart(); }} registerStop={register} onActiveChange={onBoosterActive} />
+          <Boosters volume={volume} onStart={() => { onStop(); onBoosterStart(); }} registerStop={register} onActiveChange={onBoosterActive} onBackToClass={onBackToClass} />
         )}
         {tab === "sounds" && (
         <section aria-label="Sonidos rápidos">
@@ -146,25 +147,13 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
                   aria-label={active ? `${e.label}, sonando` : `Reproducir ${e.label}`}
                   className={`flex flex-col items-center gap-0.5 rounded-xl border px-1 py-2 text-xs font-bold transition-colors ${active ? "border-primary bg-accent text-accent-foreground" : "border-border bg-card hover:bg-accent/60"}`}
                 >
-                  <span className={`text-2xl leading-none ${active ? "animate-pulse" : ""}`} aria-hidden>{e.emoji}</span>
+                  <span className={`text-2xl leading-none ${active ? "motion-safe:animate-pulse" : ""}`} aria-hidden>{e.emoji}</span>
                   <span className="truncate">{e.label}</span>
                 </button>
               );
             })}
           </div>
-          <button
-            type="button"
-            onClick={onNextDing}
-            aria-pressed={nextDing}
-            title={nextDing ? "Sonido de NEXT: activado" : "Sonido de NEXT: desactivado"}
-            className="mt-2 flex w-full items-center gap-2 rounded-lg border border-border px-2 py-1 text-left text-xs font-semibold"
-          >
-            {nextDing ? <Volume2 className="h-4 w-4 shrink-0 text-primary" aria-hidden /> : <VolumeX className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />}
-            <span className="min-w-0 flex-1 truncate">Sonido de NEXT</span>
-            <span className="text-muted-foreground">{nextDing ? "On" : "Off"}</span>
-          </button>
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground">Efectos</span>
+          <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-border px-2 py-1" role="group" aria-label="Ajustes de sonido">
             <Volume1 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
             <input
               type="range"
@@ -175,7 +164,17 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
               aria-label="Volumen de efectos"
               className="min-w-0 flex-1 accent-[var(--accent)]"
             />
-            <Volume2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <button
+              type="button"
+              onClick={onNextDing}
+              aria-pressed={nextDing}
+              aria-label="Sonido de NEXT"
+              title={nextDing ? "Sonido de NEXT: activado" : "Sonido de NEXT: desactivado"}
+              className="flex shrink-0 items-center gap-1 rounded-md border-l border-border pl-1.5 text-xs font-semibold"
+            >
+              {nextDing ? <Volume2 className="h-4 w-4 text-primary" aria-hidden /> : <VolumeX className="h-4 w-4 text-muted-foreground" aria-hidden />}
+              NEXT {nextDing ? "On" : "Off"}
+            </button>
           </div>
           <p className="mt-1 h-4 text-xs font-semibold text-accent-foreground" aria-live="polite">
             {playingLabel ? `Sonando: ${playingLabel}` : ""}

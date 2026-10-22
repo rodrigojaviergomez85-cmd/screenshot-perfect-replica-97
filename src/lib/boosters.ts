@@ -79,10 +79,19 @@ export class BoosterAudio {
 
   get activeNodes() { return this.nodes.length; }
 
+  private gains = new Map<AudioScheduledSourceNode, GainNode>();
+
+  private release(n: AudioScheduledSourceNode) {
+    try { n.disconnect(); } catch { /* ignore */ }
+    try { this.gains.get(n)?.disconnect(); } catch { /* ignore */ }
+    this.gains.delete(n);
+    this.nodes = this.nodes.filter((x) => x !== n);
+  }
+
   stop() {
-    for (const n of this.nodes) {
+    for (const n of [...this.nodes]) {
       try { n.stop(); } catch { /* ignore */ }
-      try { n.disconnect(); } catch { /* ignore */ }
+      this.release(n);
     }
     this.nodes = [];
   }
@@ -108,7 +117,6 @@ export class BoosterAudio {
     try {
       const ctx = this.ensure();
       if (!ctx || ctx.state !== "running") return;
-      this.nodes = this.nodes.slice(-12);
       const t = ctx.currentTime + 0.01;
       if (cue.kind === "move") this.tone(ctx, cue.beat % 2 ? 330 : 220, t, 0.12, 0.3, "triangle");
       else if (cue.kind === "freeze") this.tone(ctx, 880, t, 0.25, 0.2, "sine");
@@ -129,12 +137,14 @@ export class BoosterAudio {
     o.connect(g).connect(ctx.destination);
     o.start(t);
     o.stop(t + len + 0.02);
+    this.gains.set(o, g);
+    o.onended = () => this.release(o);
     this.nodes.push(o);
   }
 
   close() {
     this.stop();
-    try { void this.ctx?.close(); } catch { /* ignore */ }
+    try { void this.ctx?.close()?.catch(() => {}); } catch { /* ignore */ }
     this.ctx = null;
   }
 }

@@ -10,11 +10,13 @@ type Props = {
   /** Lets the parent stop the booster (NEXT/X, Stop) before running its own handler. */
   registerStop: (stop: (() => void) | null) => void;
   onActiveChange: (active: boolean) => void;
+  /** Finish / Back to class: return to the view that opened the panel (class stays paused). */
+  onBackToClass: () => void;
 };
 
 type Status = "ready" | "running" | "paused" | "done";
 
-export function Boosters({ volume, onStart, registerStop, onActiveChange }: Props) {
+export function Boosters({ volume, onStart, registerStop, onActiveChange, onBackToClass }: Props) {
   const [selected, setSelected] = useState<BoosterId | null>(null);
   const [status, setStatus] = useState<Status>("ready");
   const [elapsed, setElapsed] = useState(0);
@@ -85,6 +87,7 @@ export function Boosters({ volume, onStart, registerStop, onActiveChange }: Prop
     if (status === "running") { clock.current.pause(); audio.current!.stop(); setStatus("paused"); }
     else if (status === "paused") { clock.current.resume(); setStatus("running"); }
   };
+  const finish = () => { halt(); setStatus("done"); onBackToClass(); };
   const back = () => { halt(); setStatus("ready"); setSelected(null); setElapsed(0); };
 
   if (!selected) {
@@ -165,7 +168,7 @@ export function Boosters({ volume, onStart, registerStop, onActiveChange }: Prop
           </Button>
         )}
         {status !== "ready" && (
-          <Button variant={status === "done" ? "default" : "outline"} className="h-9 flex-1 rounded-xl font-bold" onClick={back}>
+          <Button variant={status === "done" ? "default" : "outline"} className="h-9 flex-1 rounded-xl font-bold" onClick={finish}>
             {status === "done" ? "Back to class" : "Finish"}
           </Button>
         )}
