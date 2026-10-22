@@ -26,7 +26,7 @@ async def open_booster(pg, label):
 
 async def run(b, width):
     pg = await (await b.new_context(viewport={"width": width, "height": 800})).new_page()
-    errs = []; pg.on("pageerror", lambda e: errs.append(str(e))); pg.on("console", lambda m: "STOP" in m.text or "DONE" in m.text and print("CON", m.text))
+    errs = []; pg.on("pageerror", lambda e: errs.append(str(e))); pg.on("console", lambda m: print("CON", m.text) if ("STOP" in m.text or "DONE" in m.text) else None)
     await pg.goto(U); await pg.evaluate(f"localStorage.setItem('{KEY}', {json.dumps(json.dumps(SEED))})")
     await pg.reload(); await pg.wait_for_timeout(1200)
     await pg.get_by_text("Test", exact=True).first.click(); await pg.wait_for_timeout(600)
