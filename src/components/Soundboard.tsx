@@ -22,6 +22,7 @@ type Props = {
   onBoosterStart: () => void;
   registerBoosterStop: (stop: (() => void) | null) => void;
   onBoosterActive: (active: boolean) => void;
+  onBackToClass: () => void;
 };
 
 type Tab = "sounds" | "boosters" | "music";
@@ -33,7 +34,7 @@ const TABS: { id: Tab; label: string }[] = [
 
 type Draft = { id: string | null; name: string; url: string; error: string | null };
 
-export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, onLinksChange, backLabel, onBack, footer, storageWarning, nextDing, onNextDing, onBoosterStart, registerBoosterStop, onBoosterActive }: Props) {
+export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, onLinksChange, backLabel, onBack, footer, storageWarning, nextDing, onNextDing, onBoosterStart, registerBoosterStop, onBoosterActive, onBackToClass }: Props) {
   // Every open starts on Boosters (component remounts per open); switching tabs never starts audio.
   const [tab, setTab] = useState<Tab>("boosters");
   const boosterStop = useRef<(() => void) | null>(null);
@@ -131,7 +132,7 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
 
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden px-3 py-2">
         {tab === "boosters" && (
-          <Boosters volume={volume} onStart={() => { onStop(); onBoosterStart(); }} registerStop={register} onActiveChange={onBoosterActive} />
+          <Boosters volume={volume} onStart={() => { onStop(); onBoosterStart(); }} registerStop={register} onActiveChange={onBoosterActive} onBackToClass={onBackToClass} />
         )}
         {tab === "sounds" && (
         <section aria-label="Sonidos rápidos">
@@ -146,7 +147,7 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
                   aria-label={active ? `${e.label}, sonando` : `Reproducir ${e.label}`}
                   className={`flex flex-col items-center gap-0.5 rounded-xl border px-1 py-2 text-xs font-bold transition-colors ${active ? "border-primary bg-accent text-accent-foreground" : "border-border bg-card hover:bg-accent/60"}`}
                 >
-                  <span className={`text-2xl leading-none ${active ? "animate-pulse" : ""}`} aria-hidden>{e.emoji}</span>
+                  <span className={`text-2xl leading-none ${active ? "motion-safe:animate-pulse" : ""}`} aria-hidden>{e.emoji}</span>
                   <span className="truncate">{e.label}</span>
                 </button>
               );

@@ -434,7 +434,9 @@ function FairTurns() {
   if (!nextDing.current) nextDing.current = new NextDing();
   const [playingEffect, setPlayingEffect] = useState<EffectId | null>(null);
   // Boosters never touch class state; they only pause the class timer when started.
-  const [boosterActive, setBoosterActive] = useState(false);
+  const [boosterActive, setBoosterActiveState] = useState(false);
+  const boosterActiveRef = useRef(false);
+  const setBoosterActive = useCallback((v: boolean) => { boosterActiveRef.current = v; setBoosterActiveState(v); }, []);
   const boosterStop = useRef<(() => void) | null>(null);
   const registerBoosterStop = useCallback((fn: (() => void) | null) => { boosterStop.current = fn; }, []);
   // Prefs and their load status change together, so defaults are never written before a real read.
@@ -974,6 +976,7 @@ function FairTurns() {
   // A stale offer never survives a change of class, mode or screen.
   useEffect(() => { setExtraOffer(null); }, [loadedClassId, afMode, screen, miniView]);
   const switchMode = (af: boolean) => {
+    boosterStop.current?.();
     if (af === afMode) return;
     clearSkipUndo();
     setAfMode(af);
@@ -1003,6 +1006,7 @@ function FairTurns() {
   /** Manual pick by clicking a name: same bookkeeping as NEXT, same eligibility rules. */
   const manualPick = (id: string, extraOk = false) => {
     if (!extraOk && extraOffer) return; // a pending extra-turn decision blocks every other turn change
+    boosterStop.current?.();
     if (id === currentId) return;
     const target = students.find((s) => s.id === id);
     if (!target) return;
@@ -1130,6 +1134,7 @@ function FairTurns() {
   };
 
   const toggleTimer = useCallback(() => {
+    if (boosterActiveRef.current) return; // class timer stays paused while a booster runs
     if (!afMode && (!useTimer || turnSeconds === 0)) return;
     setTimerRunning((r) => {
       if (!r && remaining === 0) {
@@ -1159,6 +1164,7 @@ function FairTurns() {
   );
 
   const cycleTurnSeconds = useCallback(() => {
+    if (boosterActiveRef.current) return;
     const cycle = [...TIMER_PRESETS, 0];
     const currentIndex = cycle.findIndex((seconds) => seconds === turnSeconds);
     const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % cycle.length;
@@ -1990,7 +1996,7 @@ function FairTurns() {
       title={playingEffect ? "Sonidos (efecto sonando)" : "Sonidos"}
       aria-label="Sonidos"
     >
-      <Music className={`h-3.5 w-3.5 ${playingEffect ? "animate-pulse" : ""}`} />
+      <Music className={`h-3.5 w-3.5 ${playingEffect ? "motion-safe:animate-pulse" : ""}`} />
     </Button>
   );
   const ultraCompactView = (
@@ -2067,7 +2073,7 @@ function FairTurns() {
           aria-label="Sonidos"
           title={playingEffect ? "Sonidos (efecto sonando)" : "Sonidos"}
         >
-          <Music className={`h-3.5 w-3.5 shrink-0 ${playingEffect ? "animate-pulse" : ""}`} /> <span className="truncate">Sonidos</span>
+          <Music className={`h-3.5 w-3.5 shrink-0 ${playingEffect ? "motion-safe:animate-pulse" : ""}`} /> <span className="truncate">Sonidos</span>
         </Button>
         <Button size="sm" variant="outline" className="h-8 min-w-0 rounded-lg px-1.5 text-xs font-bold" onClick={showMiniView} title="Open ultra-compact controls" aria-label="Mini">
           <Minimize2 className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">Mini</span>
@@ -2217,6 +2223,7 @@ function FairTurns() {
       onBoosterStart={() => setTimerRunning(false)}
       registerBoosterStop={registerBoosterStop}
       onBoosterActive={setBoosterActive}
+      onBackToClass={closeSounds}
       footer={
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2">
           <div className="min-w-0">
@@ -2244,16 +2251,16 @@ function FairTurns() {
 
   const pipPortal = pipWin ? createPortal(mini, pipWin.document.body) : null;
 
-  if (compact && !pipSupported) {
+  if (compact) {
     return (
-      <main className="flex h-dvh flex-col overflow-hidden">
+      <main className="mx-auto flex h-dvh w-full max-w-[520px] flex-col overflow-hidden">
         <div className="flex justify-end p-2">
           {themeToggle}
           <Button variant="ghost" size="sm" onClick={() => setCompact(false)}>
             <Maximize2 className="mr-1 h-4 w-4" /> Full view
           </Button>
         </div>
-        <div className="min-h-0 flex-1">{mini}</div>
+        <div className={`min-h-0 overflow-hidden rounded-xl border border-border ${miniView === "sounds" ? "h-[min(370px,calc(100dvh-56px))] max-h-full" : "flex-1"}`}>{mini}</div>
       </main>
     );
   }
@@ -2288,12 +2295,13 @@ function FairTurns() {
                 </span>
               </Button>
             )
-          ) : (
+          ) : null}
+          {(
             <Button
               variant="outline"
               className="rounded-xl"
-              title="For a floating window, open this app in Chrome or Edge."
-              onClick={() => setCompact(true)}
+              title={pipSupported ? "Small controls in this tab" : "For a floating window, open this app in Chrome or Edge."}
+              onClick={() => { if (pipWin) { try { pipWin.close(); } catch { /* already closed */ } setPipWin(null); } setCompact(true); }}
             >
               <Minimize2 className="mr-1 h-4 w-4" /> Compact mode
             </Button>
