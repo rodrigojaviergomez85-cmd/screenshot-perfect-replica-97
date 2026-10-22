@@ -55,7 +55,7 @@ type Screen = "home" | "setup" | "class" | "summary";
 
 const MINI_PIP_CONTENT_SIZE = { width: 320, height: 56 } as const;
 const MINI_PIP_OUTER_SIZE = { width: 320, height: 96 } as const;
-const SOUNDS_PIP_OUTER_SIZE = { width: 420, height: 600 } as const;
+const SOUNDS_PIP_OUTER_SIZE = { width: 520, height: 410 } as const;
 type FloatView = "controls" | "tally" | "mini" | "sounds";
 
 const CLASS_STORAGE_KEY = "fair-turns-class"; // legacy single-class key, migrated once
@@ -433,6 +433,10 @@ function FairTurns() {
   const nextDing = useRef<NextDing | null>(null);
   if (!nextDing.current) nextDing.current = new NextDing();
   const [playingEffect, setPlayingEffect] = useState<EffectId | null>(null);
+  // Boosters never touch class state; they only pause the class timer when started.
+  const [boosterActive, setBoosterActive] = useState(false);
+  const boosterStop = useRef<(() => void) | null>(null);
+  const registerBoosterStop = useCallback((fn: (() => void) | null) => { boosterStop.current = fn; }, []);
   // Prefs and their load status change together, so defaults are never written before a real read.
   const [soundState, setSoundState] = useState<{ prefs: SoundPrefs; status: "loading" | "ready" | "unreadable"; savedRaw: string | null }>(
     { prefs: DEFAULT_SOUND_PREFS, status: "loading", savedRaw: null },
@@ -1070,6 +1074,7 @@ function FairTurns() {
 
   const handleNext = () => {
     if (extraOffer) return;
+    boosterStop.current?.(); // deliberate NEXT during a booster: stop it first, then the shared handler runs once
     if (afMode) { afNext(); return; }
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
@@ -1094,6 +1099,7 @@ function FairTurns() {
   const canSkip = !!current;
   const handleSkip = () => {
     if (extraOffer) return;
+    boosterStop.current?.();
     const now = performance.now();
     if (now - lastNextAt.current < 300) return;
     if (afMode) {
@@ -2208,11 +2214,17 @@ function FairTurns() {
       storageWarning={soundStorageWarning}
       nextDing={dingOn}
       onNextDing={toggleDing}
+      onBoosterStart={() => setTimerRunning(false)}
+      registerBoosterStop={registerBoosterStop}
+      onBoosterActive={setBoosterActive}
       footer={
         <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2">
-          <p className="min-w-0 truncate font-[family-name:var(--font-display)] text-xl font-extrabold text-primary" title={current?.name ?? "No student selected"}>
-            {current?.name ?? "—"}
-          </p>
+          <div className="min-w-0">
+            <p className="min-w-0 truncate font-[family-name:var(--font-display)] text-xl font-extrabold leading-tight text-primary" title={current?.name ?? "No student selected"}>
+              {current?.name ?? "—"}
+            </p>
+            {boosterActive && <p className="truncate text-[11px] font-bold text-muted-foreground" role="status">⏸ Turno en pausa · booster</p>}
+          </div>
           <p className={`font-[family-name:var(--font-display)] text-lg font-extrabold tabular-nums ${miniNoTimer ? "text-accent-foreground" : timeColor}`} aria-label={miniNoTimer ? "No timer" : `Time remaining ${mmss(remaining)}`}>
             {miniNoTimer ? "∞" : mmss(remaining)}
           </p>
