@@ -153,19 +153,7 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
               );
             })}
           </div>
-          <button
-            type="button"
-            onClick={onNextDing}
-            aria-pressed={nextDing}
-            title={nextDing ? "Sonido de NEXT: activado" : "Sonido de NEXT: desactivado"}
-            className="mt-2 flex w-full items-center gap-2 rounded-lg border border-border px-2 py-1 text-left text-xs font-semibold"
-          >
-            {nextDing ? <Volume2 className="h-4 w-4 shrink-0 text-primary" aria-hidden /> : <VolumeX className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />}
-            <span className="min-w-0 flex-1 truncate">Sonido de NEXT</span>
-            <span className="text-muted-foreground">{nextDing ? "On" : "Off"}</span>
-          </button>
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground">Efectos</span>
+          <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-border px-2 py-1" role="group" aria-label="Ajustes de sonido">
             <Volume1 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
             <input
               type="range"
@@ -176,7 +164,17 @@ export function Soundboard({ playing, onPlay, onStop, volume, onVolume, links, o
               aria-label="Volumen de efectos"
               className="min-w-0 flex-1 accent-[var(--accent)]"
             />
-            <Volume2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <button
+              type="button"
+              onClick={onNextDing}
+              aria-pressed={nextDing}
+              aria-label="Sonido de NEXT"
+              title={nextDing ? "Sonido de NEXT: activado" : "Sonido de NEXT: desactivado"}
+              className="flex shrink-0 items-center gap-1 rounded-md border-l border-border pl-1.5 text-xs font-semibold"
+            >
+              {nextDing ? <Volume2 className="h-4 w-4 text-primary" aria-hidden /> : <VolumeX className="h-4 w-4 text-muted-foreground" aria-hidden />}
+              NEXT {nextDing ? "On" : "Off"}
+            </button>
           </div>
           <p className="mt-1 h-4 text-xs font-semibold text-accent-foreground" aria-live="polite">
             {playingLabel ? `Sonando: ${playingLabel}` : ""}
