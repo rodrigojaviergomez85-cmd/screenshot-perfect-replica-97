@@ -46,7 +46,7 @@ export function Boosters({ volume, onStart, registerStop, onActiveChange, onBack
     const active = status === "running" || status === "paused";
     onActiveChange(active);
     // External stop (NEXT/X/manual/mode/Stop) is an interruption, not a completion: back to the menu.
-    registerStop(active ? () => { halt(); setStatus("ready"); setSelected(null); setElapsed(0); } : null);
+    registerStop(active ? () => { console.log("EXTSTOP"); halt(); setStatus("ready"); setSelected(null); setElapsed(0); } : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
   useEffect(() => () => { registerStop(null); onActiveChange(false); }, [registerStop, onActiveChange]);
@@ -59,7 +59,7 @@ export function Boosters({ volume, onStart, registerStop, onActiveChange, onBack
       if (cue.kind === "done") {
         halt();
         setElapsed(boosterSeconds(selected) * 1000);
-        setStatus("done");
+        console.log("NATDONE", clock.current.elapsedMs()); setStatus("done");
         return;
       }
       if (cue.step !== lastStep.current || (cue.kind === "move" && cue.beat !== beatRef.current)) {
